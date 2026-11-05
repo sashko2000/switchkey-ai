@@ -1,5 +1,7 @@
 # switchkey-ai
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sashko2000)
+
 **KeyboardSwitcher** is a Windows tray app that fixes text typed in the wrong keyboard layout and, optionally,
 corrects, translates and rewrites selected text with a small language model running **locally** on the NPU, GPU or CPU
 (Intel OpenVINO, AMD Ryzen AI, llama.cpp). Typed text is never stored or sent anywhere.
@@ -105,6 +107,10 @@ CPU 13 tokens/s, ~0.6 s.
 | `Loc.cs`, `Resources/Strings.tsv` | interface translations |
 
 `tests/DetectorTests` — layout detection tests on dictionary words.
+
+## Support
+
+If the app saves you time, you can [buy me a coffee](https://buymeacoffee.com/sashko2000) ☕
 
 ## License
 
