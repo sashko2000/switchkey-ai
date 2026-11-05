@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>KeyboardSwitcher</RootNamespace>
+    <AssemblyName>KeyboardSwitcher</AssemblyName>
+    <Version>0.1.0</Version>
+    <Product>KeyboardSwitcher</Product>
+    <Description>Исправление раскладки клавиатуры с помощью локальной модели на Intel NPU</Description>
+    <ApplicationIcon>Icons\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Users don't need to install .NET: the runtime is bundled with the app -->
+    <SelfContained>true</SelfContained>
+    <!-- Internal Windows API calls intentionally without platform warnings -->
+    <NoWarn>$(NoWarn);CA1416;SYSLIB1054</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\en.txt" LogicalName="KeyboardSwitcher.Resources.en.txt" />
+    <EmbeddedResource Include="Resources\ru.txt" LogicalName="KeyboardSwitcher.Resources.ru.txt" />
+    <EmbeddedResource Include="Resources\uk.txt" LogicalName="KeyboardSwitcher.Resources.uk.txt" />
+    <EmbeddedResource Include="Resources\hi.txt" LogicalName="KeyboardSwitcher.Resources.hi.txt" />
+    <EmbeddedResource Include="Resources\tech.txt" LogicalName="KeyboardSwitcher.Resources.tech.txt" />
+    <EmbeddedResource Include="Resources\Strings.tsv" LogicalName="KeyboardSwitcher.Resources.Strings.tsv" />
+    <None Include="Icons\*.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build
+        run: dotnet build KeyboardSwitcher.sln -c Release
+      - name: Layout detection tests
+        run: dotnet run -c Release --project tests/DetectorTests
+      - name: Publish
+        run: ./build.ps1 -Zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KeyboardSwitcher
+          path: dist/KeyboardSwitcher.zip
