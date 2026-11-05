@@ -12,7 +12,7 @@
     <AssemblyName>KeyboardSwitcher</AssemblyName>
     <Version>0.1.0</Version>
     <Product>KeyboardSwitcher</Product>
-    <Description>Исправление раскладки клавиатуры с помощью локальной модели на Intel NPU</Description>
+    <Description>Keyboard layout auto-fixer with a local language model for correction and translation (NPU, GPU, CPU)</Description>
     <ApplicationIcon>Icons\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <InvariantGlobalization>false</InvariantGlobalization>
@@ -29,7 +29,10 @@
     <EmbeddedResource Include="Resources\hi.txt" LogicalName="KeyboardSwitcher.Resources.hi.txt" />
     <EmbeddedResource Include="Resources\tech.txt" LogicalName="KeyboardSwitcher.Resources.tech.txt" />
     <EmbeddedResource Include="Resources\Strings.tsv" LogicalName="KeyboardSwitcher.Resources.Strings.tsv" />
-    <None Include="Icons\*.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Tray icons are inside the exe, so the release can be a single file -->
+    <EmbeddedResource Include="Icons\on.ico" LogicalName="KeyboardSwitcher.Icons.on.ico" />
+    <EmbeddedResource Include="Icons\off.ico" LogicalName="KeyboardSwitcher.Icons.off.ico" />
+    <EmbeddedResource Include="Icons\busy.ico" LogicalName="KeyboardSwitcher.Icons.busy.ico" />
   </ItemGroup>
 
 </Project>

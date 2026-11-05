@@ -8,6 +8,11 @@ corrects, translates and rewrites selected text with a small language model runn
 
 ![Settings window](docs/screenshots/settings.png)
 
+## Download
+
+Get `KeyboardSwitcher-<version>-win-x64.exe` from [Releases](../../releases) and run it — no installation, no .NET needed.
+The tray icon «Aя» appears next to the clock; settings are in its menu.
+
 ## Features
 
 | What | How | Needs a model? |
@@ -74,7 +79,7 @@ CPU 13 tokens/s, ~0.6 s.
 
 - Visual Studio 2022 / Rider: open `KeyboardSwitcher.sln`.
 - Or install the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`) and run `build.bat` → `dist\KeyboardSwitcher`
-  (single self-contained exe; users don't need .NET). `build_zip.bat` also creates `dist\KeyboardSwitcher.zip`.
+  (a single self-contained `KeyboardSwitcher.exe`; users don't need .NET). `build_zip.bat` also creates `dist\KeyboardSwitcher.zip`.
 - `run.bat` starts the built app; `test_detector.bat` runs the layout detection tests (they also run on Linux).
 - `tools\KeyProbe` shows what the keyboard sends (useful for Apple keyboards); `tools\LangTest` checks how well the
   model translates between languages.

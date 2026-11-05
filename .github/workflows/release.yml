@@ -21,11 +21,13 @@ jobs:
       - name: Publish
         run: ./build.ps1 -Zip
         shell: pwsh
-      - name: Name the archive after the version
-        run: Rename-Item dist/KeyboardSwitcher.zip "KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip"
+      - name: Name the files after the version
+        run: |
+          Rename-Item dist/KeyboardSwitcher.zip "KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip"
+          Copy-Item dist/KeyboardSwitcher/KeyboardSwitcher.exe "dist/KeyboardSwitcher-${{ github.ref_name }}-win-x64.exe"
         shell: pwsh
-      - name: Create the GitHub release
-        run: gh release create "${{ github.ref_name }}" "dist/KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip" --title "${{ github.ref_name }}" --generate-notes
+      - name: Create the GitHub release (single exe + zip with licenses)
+        run: gh release create "${{ github.ref_name }}" "dist/KeyboardSwitcher-${{ github.ref_name }}-win-x64.exe" "dist/KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip" --title "${{ github.ref_name }}" --generate-notes
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

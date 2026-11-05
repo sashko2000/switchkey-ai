@@ -110,7 +110,28 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     {
         IntPtr Load(string file)
         {
+            // The icons are embedded in the exe; Windows loads icons from files, so they are written to the local data folder
             var path = Path.Combine(AppContext.BaseDirectory, "Icons", file);
+            if (!File.Exists(path))
+            {
+                path = Path.Combine(AiSetup.BaseDir, "icons", file);
+                try
+                {
+                    using var res = typeof(TrayApp).Assembly.GetManifestResourceStream("KeyboardSwitcher.Icons." + file);
+                    if (res != null)
+                    {
+                        using var ms = new MemoryStream();
+                        res.CopyTo(ms);
+                        var bytes = ms.ToArray();
+                        if (!File.Exists(path) || new FileInfo(path).Length != bytes.Length)
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                            File.WriteAllBytes(path, bytes);
+                        }
+                    }
+                }
+                catch (Exception ex) { Log.Write("Icon " + file + ": " + ex.Message); }
+            }
             var h = File.Exists(path) ? LoadImage(IntPtr.Zero, path, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE) : IntPtr.Zero;
             return h != IntPtr.Zero ? h : LoadIcon(IntPtr.Zero, IDI_APPLICATION);
         }
