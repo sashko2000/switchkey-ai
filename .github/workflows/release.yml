@@ -1,0 +1,31 @@
+name: release
+
+# Runs when a version tag is pushed: git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Layout detection tests
+        run: dotnet run -c Release --project tests/DetectorTests
+      - name: Publish
+        run: ./build.ps1 -Zip
+        shell: pwsh
+      - name: Name the archive after the version
+        run: Rename-Item dist/KeyboardSwitcher.zip "KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip"
+        shell: pwsh
+      - name: Create the GitHub release
+        run: gh release create "${{ github.ref_name }}" "dist/KeyboardSwitcher-${{ github.ref_name }}-win-x64.zip" --title "${{ github.ref_name }}" --generate-notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
