@@ -112,6 +112,8 @@ internal sealed class AiCorrector : IDisposable
             if (order.Count == 0 && errors.Count == 0) errors.Add(L.T("st.not_installed"));
             foreach (var c in order)
             {
+                // Another model was chosen (or this one unloaded) meanwhile: don't try the remaining devices
+                if (myGeneration != Volatile.Read(ref _loadGeneration)) return;
                 var sw = Stopwatch.StartNew();
                 try
                 {

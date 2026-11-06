@@ -41,6 +41,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     /// <summary>Translation language pair for the menu: "RU <-> EN".</summary>
     private string PairCodes => $"{_settings.TranslateLangA.ToUpperInvariant()} <-> {_settings.TranslateLangB.ToUpperInvariant()}";
     private AiJob? _pending;                 // task waiting for the model to load
+    private bool _installStoppedForSwitch;   // the installation was stopped because another model was chosen
     private const int IdleTimerId = 1;
     private CancellationTokenSource? _installCts;
     private string _installStatus = "";
@@ -569,6 +570,15 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             {
                 _installCts = null;
                 _installStatus = "";
+                if (_installStoppedForSwitch)
+                {
+                    // Stopped on purpose: no error, continue with the model chosen meanwhile
+                    _installStoppedForSwitch = false;
+                    RefreshModelLists();
+                    OnAiStatusChanged();
+                    if (_settings.AiEnabled) EnsureAi();
+                    return;
+                }
                 if (error != null)
                 {
                     Notify(AppName, L.T("note.install_failed", error), true);
@@ -870,12 +880,38 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     public void SelectModel(string id)
     {
         if (id == _settings.AiModel) return;
-        if (AiBusy || InstallRunning)
+        if (_aiBusy)
         {
-            // Not while the model is answering or installing: put the old choice back
+            // The model is answering right now: put the old choice back
             RefreshModelLists();
             Notify(AppName, L.T("note.model_busy"));
             return;
+        }
+        if (InstallRunning)
+        {
+            // The previous choice is still downloading: stop it (on agreement) and take the new one
+            var owner = _chat?.Hwnd ?? _assistant?.Hwnd ?? _settingsWindow?.Hwnd ?? _hwnd;
+            if (MessageBox(owner, L.T("msg.stop_install", ModelTitle(_settings.AiModel), ModelTitle(id)), AppName, 0x24) != 6)
+            {
+                RefreshModelLists();
+                return;
+            }
+            Log.Write($"Installation stopped: another model was chosen ({id})");
+            _installStoppedForSwitch = true;
+            _installCts?.Cancel();
+            _settings.AiModel = id;
+            _settings.Save();
+            RefreshModelLists();
+            return;   // the rest happens when the installation has stopped (StartInstall)
+        }
+        // A request waiting for the previous model to load is cancelled; the loading itself is dropped by Unload
+        if (_pending is { } job)
+        {
+            _pending = null;
+            var why = L.T("err.model_switched");
+            if (job.Done != null) job.Done(null, why);
+            else if (job.ToWindow) _assistant?.SetError(why);
+            else Input.RestoreIfUnchanged(job.Prev, job.CopySeq);
         }
         var prev = _settings.AiModel;
         Log.Write($"Model chosen in a window: {id}");
@@ -908,6 +944,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         RefreshModelLists();
         OnAiStatusChanged();
     }
+
+    private string ModelTitle(string id) => KeyboardSwitcher.ModelChoices.All(_settings).FirstOrDefault(c => c.Id == id).Title ?? id;
 
     private void RefreshModelLists()
     {
