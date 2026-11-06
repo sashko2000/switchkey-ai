@@ -1,6 +1,6 @@
 name: release
 
-# Runs when a version tag is pushed: git tag v0.1.0 && git push origin v0.1.0
+# Runs when a version tag is pushed: git tag v0.2.0 && git push origin v0.2.0
 on:
   push:
     tags: ["v*"]
@@ -16,8 +16,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Layout detection tests
-        run: dotnet run -c Release --project tests/DetectorTests
+      - name: Unit tests
+        run: dotnet test tests/KeyboardSwitcher.Tests -c Release
       - name: Publish
         run: ./build.ps1 -Zip
         shell: pwsh

@@ -10,9 +10,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>KeyboardSwitcher</RootNamespace>
     <AssemblyName>KeyboardSwitcher</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>KeyboardSwitcher</Product>
-    <Description>Keyboard layout auto-fixer with a local language model for correction and translation (NPU, GPU, CPU)</Description>
+    <Description>Keyboard layout auto-fixer with a language model for correction, translation, an assistant and chat (local on NPU, GPU, CPU or a network model)</Description>
     <ApplicationIcon>Icons\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <InvariantGlobalization>false</InvariantGlobalization>

@@ -15,8 +15,8 @@ jobs:
           dotnet-version: 10.0.x
       - name: Build
         run: dotnet build KeyboardSwitcher.sln -c Release
-      - name: Layout detection tests
-        run: dotnet run -c Release --project tests/DetectorTests
+      - name: Unit tests (layout detection, model logic with fake models and servers)
+        run: dotnet test tests/KeyboardSwitcher.Tests -c Release --logger "console;verbosity=normal"
       - name: Publish
         run: ./build.ps1 -Zip
         shell: pwsh

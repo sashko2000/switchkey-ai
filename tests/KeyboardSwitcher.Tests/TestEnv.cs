@@ -23,12 +23,17 @@ public static class TestEnv
         try { Directory.Delete(Path.Combine(Path.GetTempPath(), "ks-tests-" + Environment.ProcessId), true); } catch { }
     }
 
-    /// <summary>A fresh empty app folder (nothing installed) - set as the current one.</summary>
+    /// <summary>
+    /// A fresh empty app folder (nothing installed) - set as the current one. The previous one is deleted: tests create
+    /// fake model files of the real size (several GB on disks without sparse files).
+    /// </summary>
     public static string NewHome()
     {
+        if (Home.Length > 0) try { Directory.Delete(Home, true); } catch { }
         var dir = Path.Combine(Path.GetTempPath(), "ks-tests-" + Environment.ProcessId, Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         Environment.SetEnvironmentVariable("KEYBOARDSWITCHER_HOME", dir);
+        Home = dir;
         return dir;
     }
 }
