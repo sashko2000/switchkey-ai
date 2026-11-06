@@ -24,6 +24,7 @@ public sealed class Settings
     public string HotkeyConvertSelection { get; set; } = "Ctrl+Alt+X";
     public string HotkeyAiFix { get; set; } = "Ctrl+Alt+A";
     public string HotkeyTranslate { get; set; } = "Ctrl+Alt+T";
+    public string HotkeyChat { get; set; } = "Ctrl+Alt+C";
 
     /// <summary>Translation: true - show in a separate window, false - replace the selected text.</summary>
     public bool TranslateToWindow { get; set; } = true;
@@ -124,8 +125,7 @@ public sealed class Settings
 public static class Log
 {
     private static readonly object Sync = new();
-    public static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeyboardSwitcher", "log.txt");
+    public static string FilePath => Path.Combine(AiSetup.BaseDir, "log.txt");
 
     public static void Write(string message)
     {

@@ -23,6 +23,7 @@ The tray icon «Aя» appears next to the clock; settings are in its menu.
 | Correct the selected text (typos, wrong layout, capitalization, punctuation) | **Ctrl+Alt+A** | yes |
 | Translate the selected text between two languages from settings (Russian ↔ English by default) | **Ctrl+Alt+T** | yes |
 | Assistant: translate to English, Russian, Ukrainian, Slovak, Spanish or Hindi; fix, more polite, formal / casual, shorten, simplify, explain, reply | tray menu or Ctrl+Alt+T (window) | yes |
+| Chat with the model; the selected text goes into the message field. Chats are saved on this computer | **Ctrl+Alt+C** or tray menu | yes |
 
 | Tray menu | Assistant window |
 |---|---|
@@ -34,6 +35,9 @@ The tray icon «Aя» appears next to the clock; settings are in its menu.
 - **Technical words** (cmd, git, npm, exe, ssh and ~380 more) are recognized even though they are missing from everyday
   dictionaries. The list is in `src/KeyboardSwitcher/Resources/tech.txt` (one word per line; rebuild after editing).
 - Only the layouts installed in Windows are used.
+- **Chat:** history is kept in `%LOCALAPPDATA%\KeyboardSwitcher\chats` (one JSON file per chat; delete a chat in the window
+  or the file). Long conversations are trimmed to the newest messages that fit the model's context (~1800 characters on
+  the Intel NPU, ~10000 on GPU/CPU).
 
 ## Running the model on NPU → GPU → CPU
 
@@ -52,12 +56,11 @@ Models (pick one in settings):
 | Model | Intel (OpenVINO, INT4) | AMD GPU/CPU (GGUF) | AMD NPU (ONNX) |
 |---|---|---|---|
 | Qwen3-8B (default) | 4.75 GB | Q4_K_M, 5.0 GB | Qwen2.5-7B, 8.2 GB |
-| Mistral-7B-Instruct-v0.3 | 3.8 GB | Q4_K_M, 4.4 GB | 7.5 GB |
-| Phi-3.5-mini-instruct | 2.0 GB | Q4_K_M, 2.4 GB | 4.1 GB |
-| Qwen3-4B | converted locally (~2.5 GB) | Q4_K_M, 2.5 GB | Qwen2.5-3B, 3.8 GB |
+| Qwen3-4B | 2.3 GB, GPU and CPU only (no NPU version) | Q4_K_M, 2.5 GB | Qwen2.5-3B, 3.8 GB |
 | Qwen3-1.7B | converted locally (~1.2 GB) | Q8_0, 1.8 GB | Qwen2.5-1.5B, 2.1 GB |
 
-- Intel models that are not published for NPU are converted on this computer: the app installs Python 3.12 (per user)
+- Mistral-7B and Phi-3.5-mini were removed after the model tests: they are weak in Russian, Ukrainian and Hindi.
+- Qwen3-1.7B is not published for the Intel NPU, so it is converted on this computer: the app installs Python 3.12 (per user)
   and Intel's conversion tools (~3 GB).
 - If the Visual C++ Runtime is too old, the app installs it (Windows asks for confirmation).
 - AMD NPU: only XDNA 2 (Ryzen AI 300/400) with NPU driver 32.0.203.280 or newer. XDNA 1 (Ryzen 7040/8040/200) can't run
@@ -73,6 +76,7 @@ CPU 13 tokens/s, ~0.6 s.
 
 - Settings: `%APPDATA%\KeyboardSwitcher\settings.json`
 - Log (no typed text, no keystrokes): `%LOCALAPPDATA%\KeyboardSwitcher\log.txt`
+- Chats: `%LOCALAPPDATA%\KeyboardSwitcher\chats`
 - Engines and models: `%LOCALAPPDATA%\KeyboardSwitcher`
 
 ## Building
@@ -80,7 +84,18 @@ CPU 13 tokens/s, ~0.6 s.
 - Visual Studio 2022 / Rider: open `KeyboardSwitcher.sln`.
 - Or install the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`) and run `build.bat` → `dist\KeyboardSwitcher`
   (a single self-contained `KeyboardSwitcher.exe`; users don't need .NET). `build_zip.bat` also creates `dist\KeyboardSwitcher.zip`.
-- `run.bat` starts the built app; `test_detector.bat` runs the layout detection tests (they also run on Linux).
+- `run.bat` starts the built app.
+
+## Tests
+
+| Command | What it checks | Where it runs |
+|---|---|---|
+| `test.bat`, or **Test Explorer** in Visual Studio (`tests\KeyboardSwitcher.Tests`, MSTest) | layout detection (minimum accuracy per scenario, single-letter words, text conversion, preferred layout, Hindi) and model logic without a real model: prompts for all actions and languages, retries (untranslated text, transliteration), fallback for templates without a system role, text clean-up, device order NPU → GPU → CPU for Intel and AMD, installation plans, catalog and translations, the local server backend (fake server), chat (history trimming, saved chats) | anywhere, GitHub Actions |
+| `test_detector.bat` | detailed layout detection report with error examples (`-v`) | anywhere |
+| `tools\ModelTests\model_tests.bat` | every catalog model on every device of this computer (NPU, GPU, CPU) with real requests: correction, translation to all 6 languages, every assistant action. Downloads missing models; writes `model_test_report.md` | a real Windows computer (Intel or AMD) |
+
+`model_tests.bat` options: `--models qwen3-8b,phi-3.5-mini`, `--devices NPU,GPU,CPU`, `--no-download`, `--quick` (4 tests per device).
+Testing all models downloads up to ~15 GB (Qwen3-1.7B is converted on Intel) and takes 1-3 hours.
 - `tools\KeyProbe` shows what the keyboard sends (useful for Apple keyboards); `tools\LangTest` checks how well the
   model translates between languages.
 
@@ -107,7 +122,8 @@ CPU 13 tokens/s, ~0.6 s.
 |---|---|
 | `KeyboardMonitor.cs` | keyboard hook, word tracking, replacement |
 | `LayoutDetector.cs`, `Layouts.cs` | layout detection: frequency dictionaries + trigram model, key tables |
-| `TrayApp.cs`, `SettingsWindow.cs`, `AssistantWindow.cs` | tray icon, menu, hotkeys, windows |
+| `TrayApp.cs`, `SettingsWindow.cs`, `AssistantWindow.cs`, `ChatWindow.cs` | tray icon, menu, hotkeys, windows |
+| `ChatStore.cs` | saved chats |
 | `AiCorrector.cs` | prompts for correction, translation and rewriting |
 | `AiPlatform.cs` | engine choice by processor vendor, NPU → GPU → CPU order |
 | `OpenVinoGenAI.cs`, `LlmBackend.cs`, `AmdSupport.cs` | OpenVINO C API, local server backend, AMD detection and engines |

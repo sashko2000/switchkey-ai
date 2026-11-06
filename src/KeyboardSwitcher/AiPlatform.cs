@@ -26,10 +26,10 @@ internal static class AiPlatform
     /// <summary>AMD processor, but Smart App Control forces the OpenVINO CPU path.</summary>
     public static bool AmdBlockedBySac => Hardware.IsAmdCpu && Hardware.SmartAppControlOn;
 
-    private static readonly string[] Kinds = { "NPU", "GPU", "CPU" };
+    internal static readonly string[] Kinds = { "NPU", "GPU", "CPU" };
 
     /// <summary>Device kinds in the order to try: the chosen one first, then the rest in NPU, GPU, CPU order.</summary>
-    private static List<string> KindOrder(string choice)
+    internal static List<string> KindOrder(string choice)
     {
         var order = Kinds.ToList();
         var c = choice.ToUpperInvariant();
@@ -140,8 +140,11 @@ internal static class AiPlatform
             if (dir == null) return list;
             var cache = Path.Combine(AiSetup.BaseDir, "ovcache"); // local folder: the NPU cache can be large
             try { Directory.CreateDirectory(cache); } catch (Exception ex) { Log.Write("No cache folder: " + ex.Message); }
+            var info = AiSetup.FindModelInfo(s.AiModel);
             foreach (var dev in OvDevices.Order(s.AiDevice, s.AiDevices))
             {
+                // Some models have no NPU version (asymmetric INT4): skip the NPU, take the GPU/CPU
+                if (!info.OpenVinoNpu && string.IsNullOrWhiteSpace(s.ModelPath) && OvDevices.Kind(dev) == "NPU") continue;
                 var d = dev;
                 list.Add(new LoadCandidate(d, () => new OvBackend(AiCorrector.SafePath(dir), d, AiCorrector.SafePath(cache))));
             }

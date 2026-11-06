@@ -26,7 +26,12 @@ internal static class Hardware
     });
 
     /// <summary>AMD processor ("AuthenticAMD"). Then AMD engines are used instead of OpenVINO.</summary>
-    public static bool IsAmdCpu => Vendor.Value == "AuthenticAMD";
+    public static bool IsAmdCpu => Environment.GetEnvironmentVariable("KEYBOARDSWITCHER_FORCE_VENDOR") switch
+    {
+        "amd" => true,      // tests: pretend to be an AMD / Intel computer
+        "intel" => false,
+        _ => Vendor.Value == "AuthenticAMD",
+    };
 
     public static string CpuName
     {

@@ -24,7 +24,7 @@ internal sealed class SettingsWindow
         ID_HK_LAST_OFF = 1016, ID_HK_SEL_OFF = 1017, ID_HK_AI_OFF = 1018,
         ID_APP_COMBO = 1020, ID_APP_ADD = 1021, ID_APP_LIST = 1022, ID_APP_REMOVE = 1023,
         ID_AI = 1030, ID_MODEL = 1031, ID_MODEL_NOTE = 1032, ID_STATUS = 1033,
-        ID_HK_TR = 1050, ID_HK_TR_DEF = 1051, ID_HK_TR_OFF = 1052, ID_TR_MODE = 1053, ID_UNLOAD = 1054, ID_ON_DEMAND = 1055,
+        ID_HK_TR = 1050, ID_HK_TR_DEF = 1051, ID_HK_TR_OFF = 1052, ID_HK_CHAT = 1066, ID_HK_CHAT_DEF = 1067, ID_HK_CHAT_OFF = 1068, ID_TR_MODE = 1053, ID_UNLOAD = 1054, ID_ON_DEMAND = 1055,
         ID_UI_LANG = 1060, ID_LANG_A = 1061, ID_LANG_B = 1062, ID_LAYOUT_PRIO = 1063, ID_DEVICE = 1064, ID_DEVICE_INFO = 1065;
 
     private const string ClassName = "KeyboardSwitcherSettings";
@@ -151,7 +151,7 @@ internal sealed class SettingsWindow
         SendMessage(lp, CB_ADDSTRING, IntPtr.Zero, L.T("sw.layout_auto"));
         foreach (var c in PriorityCodes.Skip(1)) SendMessage(lp, CB_ADDSTRING, IntPtr.Zero, Languages.Get(c).NativeName);
 
-        Ctl(0, "BUTTON", L.T("sw.hotkeys"), BS_GROUPBOX, 8, 130, 408, 156);
+        Ctl(0, "BUTTON", L.T("sw.hotkeys"), BS_GROUPBOX, 8, 130, 408, 188);
         void HotkeyRow(int y, string text, int id, int defId, int offId)
         {
             Label(text, 20, y + 3, 124);
@@ -165,13 +165,14 @@ internal sealed class SettingsWindow
         HotkeyRow(186, L.T("sw.hk.sel"), ID_HK_SEL, ID_HK_SEL_DEF, ID_HK_SEL_OFF);
         HotkeyRow(218, L.T("sw.hk.ai"), ID_HK_AI, ID_HK_AI_DEF, ID_HK_AI_OFF);
         HotkeyRow(250, L.T("sw.hk.tr"), ID_HK_TR, ID_HK_TR_DEF, ID_HK_TR_OFF);
+        HotkeyRow(282, L.T("sw.hk.chat"), ID_HK_CHAT, ID_HK_CHAT_DEF, ID_HK_CHAT_OFF);
 
-        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 296, 408, 196);
-        Ctl(ID_APP_COMBO, "COMBOBOX", "", CBS_DROPDOWN | CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_TABSTOP, 20, 320, 250, 220);
-        Ctl(ID_APP_ADD, "BUTTON", L.T("sw.add"), BS_PUSHBUTTON | WS_TABSTOP, 278, 319, 126, 26);
-        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 352, 250, 128, WS_EX_CLIENTEDGE);
-        Ctl(ID_APP_REMOVE, "BUTTON", L.T("sw.remove"), BS_PUSHBUTTON | WS_TABSTOP, 278, 352, 126, 26);
-        Label(L.T("sw.excl_hint"), 278, 386, 126, 90);
+        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 328, 408, 172);
+        Ctl(ID_APP_COMBO, "COMBOBOX", "", CBS_DROPDOWN | CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_TABSTOP, 20, 352, 250, 220);
+        Ctl(ID_APP_ADD, "BUTTON", L.T("sw.add"), BS_PUSHBUTTON | WS_TABSTOP, 278, 351, 126, 26);
+        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 384, 250, 104, WS_EX_CLIENTEDGE);
+        Ctl(ID_APP_REMOVE, "BUTTON", L.T("sw.remove"), BS_PUSHBUTTON | WS_TABSTOP, 278, 384, 126, 26);
+        Label(L.T("sw.excl_hint"), 278, 416, 126, 78);
 
         // ---------- right column: model
         Ctl(0, "BUTTON", L.T("sw.ai_group"), BS_GROUPBOX, 428, 6, 404, 486);
@@ -226,6 +227,7 @@ internal sealed class SettingsWindow
         SetHotkey(ID_HK_SEL, s.HotkeyConvertSelection);
         SetHotkey(ID_HK_AI, s.HotkeyAiFix);
         SetHotkey(ID_HK_TR, s.HotkeyTranslate);
+        SetHotkey(ID_HK_CHAT, s.HotkeyChat);
         SendMessage(_ctl[ID_TR_MODE], CB_SETCURSEL, (IntPtr)(s.TranslateToWindow ? 0 : 1), IntPtr.Zero);
         int ui = Array.IndexOf(UnloadMinutes, s.AiUnloadAfterMinutes);
         SendMessage(_ctl[ID_UNLOAD], CB_SETCURSEL, (IntPtr)(ui < 0 ? 2 : ui), IntPtr.Zero);
@@ -258,6 +260,7 @@ internal sealed class SettingsWindow
             HotkeyConvertSelection = GetHotkey(ID_HK_SEL),
             HotkeyAiFix = GetHotkey(ID_HK_AI),
             HotkeyTranslate = GetHotkey(ID_HK_TR),
+            HotkeyChat = GetHotkey(ID_HK_CHAT),
             TranslateToWindow = (int)SendMessage(_ctl[ID_TR_MODE], CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero) != 1,
             AiUnloadAfterMinutes = UnloadMinutes[Math.Clamp((int)SendMessage(_ctl[ID_UNLOAD], CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero), 0, UnloadMinutes.Length - 1)],
             UiLanguage = SelectedLang(ID_UI_LANG),
@@ -475,6 +478,8 @@ internal sealed class SettingsWindow
             case ID_HK_AI_OFF: SetHotkey(ID_HK_AI, ""); break;
             case ID_HK_TR_DEF: SetHotkey(ID_HK_TR, Defaults.HotkeyTranslate); break;
             case ID_HK_TR_OFF: SetHotkey(ID_HK_TR, ""); break;
+            case ID_HK_CHAT_DEF: SetHotkey(ID_HK_CHAT, Defaults.HotkeyChat); break;
+            case ID_HK_CHAT_OFF: SetHotkey(ID_HK_CHAT, ""); break;
             case ID_APP_ADD:
                 {
                     var name = GetText(_ctl[ID_APP_COMBO]).Trim();

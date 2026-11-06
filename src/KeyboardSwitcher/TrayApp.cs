@@ -7,12 +7,12 @@ using static KeyboardSwitcher.Native;
 namespace KeyboardSwitcher;
 
 /// <summary>Tray icon, menu and hotkeys. Runs on the app's main thread.</summary>
-internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWindow.IHost
+internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWindow.IHost, ChatWindow.IHost
 {
     private const uint WM_TRAY = WM_APP + 1, WM_INVOKE = WM_APP + 2;
-    private const int HK_LAST = 1, HK_SELECTION = 2, HK_AI = 3, HK_TRANSLATE = 4;
-    private static readonly int[] AllHotkeyIds = { HK_LAST, HK_SELECTION, HK_AI, HK_TRANSLATE };
-    private const int CMD_AUTO = 1, CMD_LAST = 2, CMD_SEL = 3, CMD_AI = 4, CMD_TRANSLATE = 5, CMD_RELOAD = 6, CMD_UNLOAD = 7, CMD_ASSISTANT = 13,
+    private const int HK_LAST = 1, HK_SELECTION = 2, HK_AI = 3, HK_TRANSLATE = 4, HK_CHAT = 5;
+    private static readonly int[] AllHotkeyIds = { HK_LAST, HK_SELECTION, HK_AI, HK_TRANSLATE, HK_CHAT };
+    private const int CMD_AUTO = 1, CMD_LAST = 2, CMD_SEL = 3, CMD_AI = 4, CMD_TRANSLATE = 5, CMD_RELOAD = 6, CMD_UNLOAD = 7, CMD_ASSISTANT = 13, CMD_CHAT = 14,
         CMD_SETTINGS = 8, CMD_CANCEL_INSTALL = 9, CMD_LOG = 10, CMD_ABOUT = 11, CMD_EXIT = 12;
     private const string AppName = "KeyboardSwitcher";
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -30,10 +30,13 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
 
     private SettingsWindow? _settingsWindow;
     private AssistantWindow? _assistant;
+    private ChatWindow? _chat;
     private IntPtr _assistantSourceWnd;      // window the assistant's text was taken from
 
     /// <summary>ToWindow - result to the assistant window, otherwise - replaces the selected text.</summary>
-    private sealed record AiJob(AssistantTask Task, string Text, string? Prev, uint CopySeq, IntPtr Fg, bool ToWindow);
+    /// <param name="Work">Custom work instead of the assistant task (chat); Done receives (result, error).</param>
+    private sealed record AiJob(AssistantTask Task, string Text, string? Prev, uint CopySeq, IntPtr Fg, bool ToWindow,
+        Func<AiCorrector, string>? Work = null, Action<string?, string?>? Done = null);
 
     /// <summary>Translation language pair for the menu: "RU <-> EN".</summary>
     private string PairCodes => $"{_settings.TranslateLangA.ToUpperInvariant()} <-> {_settings.TranslateLangB.ToUpperInvariant()}";
@@ -75,6 +78,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             if (sw != IntPtr.Zero && (_settingsWindow!.PreTranslate(ref msg) || IsDialogMessage(sw, ref msg))) continue;
             var aw = _assistant?.Hwnd ?? IntPtr.Zero;
             if (aw != IntPtr.Zero && (_assistant!.PreTranslate(ref msg) || IsDialogMessage(aw, ref msg))) continue;
+            var cw = _chat?.Hwnd ?? IntPtr.Zero;
+            if (cw != IntPtr.Zero && (_chat!.PreTranslate(ref msg) || IsDialogMessage(cw, ref msg))) continue;
             TranslateMessage(ref msg);
             DispatchMessage(ref msg);
         }
@@ -226,6 +231,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             AppendMenu(m, MF_STRING, (UIntPtr)CMD_AI, L.T("menu.ai") + "\t" + _settings.HotkeyAiFix);
             AppendMenu(m, MF_STRING, (UIntPtr)CMD_TRANSLATE, L.T("menu.translate", PairCodes) + "\t" + _settings.HotkeyTranslate);
             AppendMenu(m, MF_STRING, (UIntPtr)CMD_ASSISTANT, L.T("menu.assistant"));
+            AppendMenu(m, MF_STRING, (UIntPtr)CMD_CHAT, L.T("menu.chat") + (_settings.HotkeyChat.Length > 0 ? "\t" + _settings.HotkeyChat : ""));
             AppendMenu(m, MF_SEPARATOR, UIntPtr.Zero, null);
             var status = L.T("tip.model", AiStatusText).Replace("\t", " ");
             AppendMenu(m, MF_STRING | MF_GRAYED, UIntPtr.Zero, status.Length > 90 ? status[..90] + "..." : status);
@@ -265,6 +271,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 _assistantSourceWnd = IntPtr.Zero;
                 ShowAssistant("", AssistantTask.FromId(_settings.AssistantLastTask), runNow: false);
                 break;
+            case CMD_CHAT: ShowChat(null); break;
             case CMD_UNLOAD:
                 _ai.Unload();
                 _loadedModelDir = null;
@@ -286,6 +293,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 _installCts?.Cancel();
                 KillTimer(_hwnd, (UIntPtr)IdleTimerId);
                 _assistant?.Close();
+                _chat?.Close();
                 _settingsWindow?.Close();
                 DestroyWindow(_hwnd);
                 break;
@@ -420,7 +428,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             {
                 var job = _pending;
                 _pending = null;
-                if (job.ToWindow) _assistant?.SetError(L.T("err.model_failed", _ai.Message));
+                if (job.Done != null) job.Done(null, L.T("err.model_failed", _ai.Message));
+                else if (job.ToWindow) _assistant?.SetError(L.T("err.model_failed", _ai.Message));
                 else Input.RestoreIfUnchanged(job.Prev, job.CopySeq);
                 Notify(AppName, L.T("note.model_failed", _ai.Message), true);
             }
@@ -430,7 +439,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     public bool Apply(Settings s, bool autostart)
     {
         // Hotkey check
-        var keys = new[] { s.HotkeyConvertLastWord, s.HotkeyConvertSelection, s.HotkeyAiFix, s.HotkeyTranslate }.Where(k => k.Length > 0).ToList();
+        var keys = new[] { s.HotkeyConvertLastWord, s.HotkeyConvertSelection, s.HotkeyAiFix, s.HotkeyTranslate, s.HotkeyChat }.Where(k => k.Length > 0).ToList();
         if (keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != keys.Count)
         {
             MessageBox(_settingsWindow?.Hwnd ?? _hwnd, L.T("msg.dup_hotkey"), AppName, 0x30);
@@ -455,6 +464,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             // New interface language: recreate the windows
             L.SetLanguage(_settings.UiLanguage);
             _assistant?.Close();
+            _chat?.Close();
             // On "Apply" the settings window stays open - recreate it in the new language
             Invoke(() => { if (_settingsWindow != null) { _settingsWindow.Close(); Invoke(OpenSettings); } });
             UpdateIcon();
@@ -576,6 +586,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         {
             Reg(HK_AI, _settings.HotkeyAiFix);
             Reg(HK_TRANSLATE, _settings.HotkeyTranslate);
+            Reg(HK_CHAT, _settings.HotkeyChat);
         }
         _monitor.Hotkeys = set;
         if (failed.Count > 0)
@@ -618,6 +629,12 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 break;
             case HK_TRANSLATE:
                 BeginAiJob(new AssistantTask(AiAction.TranslatePair), toWindow: _settings.TranslateToWindow);
+                break;
+            case HK_CHAT:
+                // The selected text (if any) goes into the message field; the clipboard is restored right away
+                var text = Input.CopySelection(out var prev, out uint seq);
+                if (text != null) Input.RestoreIfUnchanged(prev, seq);
+                ShowChat(text);
                 break;
         }
     }
@@ -687,9 +704,9 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         {
             var sw = Stopwatch.StartNew();
             string? result = null, error = null;
-            try { result = _ai.Transform(job.Task, input, a, b, ui); }
+            try { result = job.Work != null ? job.Work(_ai) : _ai.Transform(job.Task, input, a, b, ui); }
             catch (Exception ex) { error = ex.Message; Log.Write("Model error: " + ex.Message); }
-            Log.Write($"{job.Task.Id}: {job.Text.Length} characters in {sw.Elapsed.TotalSeconds:F1} s");
+            Log.Write($"{(job.Work != null ? "chat" : job.Task.Id)}: {job.Text.Length} characters in {sw.Elapsed.TotalSeconds:F1} s");
             Invoke(() => Finish(job, result, error));
         });
     }
@@ -698,6 +715,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     {
         _aiBusy = false;
         UpdateIcon();
+        if (job.Done != null) { job.Done(result, error); return; }
         if (job.ToWindow)
         {
             if (_assistant == null) return; // the window has already been closed
@@ -785,6 +803,34 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     }
 
     public void AssistantClosed() => _assistant = null;
+
+    // ------------------------------------------------------------------ chat window
+
+    private void ShowChat(string? text)
+    {
+        _chat ??= new ChatWindow(this);
+        _chat.Show(text, _iconOn);
+    }
+
+    public void SendChat(IReadOnlyList<ChatMessage> history, Action<string?, string?> done)
+    {
+        if (InstallRunning) { done(null, L.T("err.still_installing", _installStatus)); return; }
+        if (!_settings.AiEnabled || (_ai.Status != AiCorrector.State.Ready && !AiPlatform.Installed(_settings)))
+        {
+            done(null, L.T("err.not_installed"));
+            return;
+        }
+        var last = history[^1].Content;
+        if (last.Length > _settings.AiMaxChars) { done(null, L.T("err.too_long", last.Length, _settings.AiMaxChars)); return; }
+        var job = new AiJob(new AssistantTask(AiAction.Explain), last, null, 0, IntPtr.Zero, ToWindow: true,
+            Work: ai => ai.Converse(history), Done: done);
+        if (_ai.Status == AiCorrector.State.Ready) { Execute(job); return; }
+        _pending = job;
+        if (_ai.Status != AiCorrector.State.Loading) LoadModel();
+        _chat?.SetBusy(true, L.T("st.loading_model"));
+    }
+
+    public void ChatClosed() => _chat = null;
 
     public void Dispose()
     {

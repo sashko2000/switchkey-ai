@@ -62,14 +62,30 @@ internal sealed class OvBackend : ILlmBackend
 /// </summary>
 internal sealed class ServerBackend : ILlmBackend
 {
-    private readonly Process _process;
+    private readonly Process? _process;   // null - attached to a server that runs elsewhere (tests)
     private readonly HttpClient _http;
     private readonly string _base;
     private readonly bool _thinkingKwargs;
     private readonly Queue<string> _tail = new();
     private static readonly IntPtr Job = CreateKillOnCloseJob();
 
-    public Process? Child => _process.HasExited ? null : _process;
+    public Process? Child => _process is { HasExited: false } ? _process : null;
+
+    /// <summary>Tests: use a server that is already running at <paramref name="baseUrl"/> (no child process).</summary>
+    internal ServerBackend(string baseUrl, string? apiKey, bool thinkingKwargs, TimeSpan startTimeout)
+    {
+        _base = baseUrl.TrimEnd('/');
+        _thinkingKwargs = thinkingKwargs;
+        _http = NewHttp(apiKey);
+        WaitReady("server", startTimeout);
+    }
+
+    private static HttpClient NewHttp(string? apiKey)
+    {
+        var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromMinutes(5) };
+        if (apiKey != null) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        return http;
+    }
 
     /// <param name="arguments">Command line; {port} is replaced with a free port.</param>
     /// <param name="apiKey">Passed as a Bearer token if the server was started with one.</param>
@@ -79,8 +95,7 @@ internal sealed class ServerBackend : ILlmBackend
         int port = FreePort();
         _base = $"http://127.0.0.1:{port}";
         _thinkingKwargs = thinkingKwargs;
-        _http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromMinutes(5) };
-        if (apiKey != null) _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        _http = NewHttp(apiKey);
 
         var psi = new ProcessStartInfo(exe, arguments.Replace("{port}", port.ToString()))
         {
@@ -99,12 +114,16 @@ internal sealed class ServerBackend : ILlmBackend
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
         Log.Write($"Started {Path.GetFileName(exe)} (pid {_process.Id}, port {port})");
+        WaitReady(Path.GetFileName(exe), startTimeout);
+    }
 
-        // Wait until the model is loaded: /health answers 200 (llama-server answers 503 while loading)
+    /// <summary>Wait until the model is loaded: /health answers 200 (llama-server answers 503 while loading).</summary>
+    private void WaitReady(string name, TimeSpan startTimeout)
+    {
         var sw = Stopwatch.StartNew();
         while (true)
         {
-            if (_process.HasExited)
+            if (_process is { HasExited: true })
             {
                 var why = LastLines();
                 uint code = unchecked((uint)_process.ExitCode);
@@ -113,10 +132,10 @@ internal sealed class ServerBackend : ILlmBackend
                 if (code == 0xC0E90002)
                 {
                     Hardware.MarkUnsignedBlocked();
-                    throw new InvalidOperationException(L.T("err.blocked_by_windows", Path.GetFileName(exe)));
+                    throw new InvalidOperationException(L.T("err.blocked_by_windows", name));
                 }
                 if (why.Length == 0) why = $"0x{code:X8}";
-                throw new InvalidOperationException(L.T("err.server_exited", Path.GetFileName(exe), why));
+                throw new InvalidOperationException(L.T("err.server_exited", name, why));
             }
             try
             {
@@ -128,7 +147,7 @@ internal sealed class ServerBackend : ILlmBackend
             if (sw.Elapsed > startTimeout)
             {
                 Dispose();
-                throw new InvalidOperationException(L.T("err.server_timeout", Path.GetFileName(exe), (int)startTimeout.TotalSeconds));
+                throw new InvalidOperationException(L.T("err.server_timeout", name, (int)startTimeout.TotalSeconds));
             }
             Thread.Sleep(500);
         }
@@ -174,7 +193,7 @@ internal sealed class ServerBackend : ILlmBackend
 
     private JsonNode? Post(string path, JsonObject body)
     {
-        if (_process.HasExited) throw new InvalidOperationException(L.T("err.server_exited", _process.StartInfo.FileName, LastLines()));
+        if (_process is { HasExited: true }) throw new InvalidOperationException(L.T("err.server_exited", _process.StartInfo.FileName, LastLines()));
         using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         using var r = _http.PostAsync(_base + path, content).GetAwaiter().GetResult();
         var text = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -187,8 +206,8 @@ internal sealed class ServerBackend : ILlmBackend
 
     public void Dispose()
     {
-        try { if (!_process.HasExited) { _process.Kill(true); _process.WaitForExit(5000); } } catch { }
-        _process.Dispose();
+        try { if (_process is { HasExited: false }) { _process.Kill(true); _process.WaitForExit(5000); } } catch { }
+        _process?.Dispose();
         _http.Dispose();
     }
 

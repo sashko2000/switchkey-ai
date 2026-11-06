@@ -168,8 +168,15 @@ internal sealed class AiCorrector : IDisposable
             "You are a careful proofreader. Fix typos, spelling, wrong keyboard layout (Latin letters typed instead of " +
             "Cyrillic or vice versa, e.g. \"ghbdtn\" = \"привет\"), capitalization and punctuation in the user's text. " +
             "Do not change the meaning, style, tone, language or word order, even if the text is rude. " +
+            "The answer must be in the SAME language as the user's text: English stays English, Russian stays Russian. " +
             "Do not translate, do not add anything, do not comment. Reply with the corrected text only.";
-        var examples = new[] { ("ghbdtn, rfr ltkf?", "Привет, как дела?"), ("я вчера купел новый тилефон", "Я вчера купил новый телефон.") };
+        // Examples in several languages: with only Russian ones, models translated English text into Russian
+        var examples = new[]
+        {
+            ("ghbdtn, rfr ltkf?", "Привет, как дела?"),
+            ("I recieved you're mesage, thanks", "I received your message, thanks."),
+            ("я вчера купел новый тилефон", "Я вчера купил новый телефон."),
+        };
         try { return Chat(system, examples, text); }
         catch (InvalidOperationException ex)
         {
@@ -203,17 +210,32 @@ internal sealed class AiCorrector : IDisposable
         var examples = new List<(string, string)> { (targetCode == "ru" ? "Hi, how are yuo?" : "Привет, как дила?", hello) };
         if (targetCode == "en") examples.Add(("я вчора бачив кота на вулиці", "I saw a cat on the street yesterday."));
         if (targetCode == "ru") examples.Add(("Thanks for you're help!", "Спасибо за помощь!"));
+        // A thank-you phrase is translated, not answered (Qwen3-8B answered "Спасибо за помощь!" with "You're welcome!")
+        var thanks = targetCode switch
+        {
+            "en" => "Thank you very much, see you tomorrow!",
+            "ru" => "Большое спасибо, до завтра!",
+            "uk" => "Щиро дякую, до завтра!",
+            "sk" => "Ďakujem pekne, uvidíme sa zajtra!",
+            "es" => "¡Muchas gracias, hasta mañana!",
+            "hi" => "बहुत धन्यवाद, कल मिलते हैं!",
+            _ => "Thank you very much, see you tomorrow!",
+        };
+        examples.Add((targetCode == "ru" ? "Thanks a lot, see you tomorrow!" : "Большое спасибо, до завтра!", thanks));
         var ex = examples.ToArray();
 
         if (targetCode == "sk") system += " Use standard Slovak spelling and words, not Czech.";
 
-        var result = Chat(system, ex, text);
+        // The text is marked as a task, so the model translates it instead of answering ("Спасибо!" -> "You're welcome!")
+        string Task(string t) => $"Translate into {name}:\n" + t;
+        for (int i = 0; i < ex.Length; i++) ex[i] = (Task(ex[i].Item1), ex[i].Item2);
+        var result = Chat(system, ex, text, userContent: Task(text));
         // The model returned the text untranslated (happens between Russian and Ukrainian) - retry with reasoning
         static string Norm(string s) => new string(s.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
         if (Norm(result) == Norm(text) && Languages.Detect(text) != targetCode && Norm(text).Length > 0)
         {
             Log.Write("The model did not translate the text - retrying with reasoning");
-            var again = Chat(system, ex, text, think: true);
+            var again = Chat(system, ex, text, think: true, userContent: Task(text));
             if (!string.IsNullOrWhiteSpace(again)) result = again;
         }
         // Translation to a Latin-script language came out as a transliteration of the Cyrillic text
@@ -225,16 +247,18 @@ internal sealed class AiCorrector : IDisposable
         string fixedText = text;
         try { fixedText = Fix(text); } catch (Exception e) { Log.Write("Correction before translation: " + e.Message); }
         if (string.IsNullOrWhiteSpace(fixedText)) fixedText = text;
-        result = Chat(system, ex, fixedText);
+        result = Chat(system, ex, fixedText, userContent: Task(fixedText));
         if (!LooksTransliterated(fixedText, result) && !LooksTransliterated(text, result)) return result;
 
         // Attempt 3: let the model think before answering (slower but more accurate)
         Log.Write("Transliteration again - translating with reasoning");
-        var thought = Chat(system, ex, fixedText, think: true);
+        var thought = Chat(system, ex, fixedText, think: true, userContent: Task(fixedText));
         return string.IsNullOrWhiteSpace(thought) || LooksTransliterated(text, thought) ? result : thought;
     }
 
-    private string Chat(string system, (string user, string assistant)[] examples, string text, bool think = false, int? maxTokens = null)
+    /// <param name="userContent">What is sent as the user's message (default - the text itself).</param>
+    private string Chat(string system, (string user, string assistant)[] examples, string text, bool think = false, int? maxTokens = null,
+        string? userContent = null)
     {
         var msgs = new List<object> { new { role = "system", content = system } };
         foreach (var (u, a) in examples)
@@ -242,7 +266,7 @@ internal sealed class AiCorrector : IDisposable
             msgs.Add(new { role = "user", content = u });
             msgs.Add(new { role = "assistant", content = a });
         }
-        msgs.Add(new { role = "user", content = text });
+        msgs.Add(new { role = "user", content = userContent ?? text });
         var json = System.Text.Json.JsonSerializer.Serialize(msgs);
 
         if (Status != State.Ready) throw new InvalidOperationException(L.T("err.not_ready", Message));
@@ -259,7 +283,7 @@ internal sealed class AiCorrector : IDisposable
                 // Some models' templates (Mistral) don't accept the system role - merge everything into one request
                 Log.Write("Chat mode failed (" + ex.Message + "), falling back to a plain request");
                 var sb = new System.Text.StringBuilder(system).Append("\n\n");
-                foreach (var (u, a) in examples) sb.Append("Text: ").Append(u).Append("\nTranslation: ").Append(a).Append("\n\n");
+                foreach (var (u, a) in examples) sb.Append("Text: ").Append(System.Text.RegularExpressions.Regex.Replace(u, @"^Translate into [^:\n]+:\n", "")).Append("\nTranslation: ").Append(a).Append("\n\n");
                 sb.Append("Text: ").Append(text).Append("\nTranslation:\n/no_think");
                 raw = be.GenerateText(sb.ToString(), maxNew);
             }
@@ -268,11 +292,62 @@ internal sealed class AiCorrector : IDisposable
         return Clean(raw, text);
     }
 
+    /// <summary>
+    /// Answer in a chat. history - the whole conversation (user/assistant turns, the last one is the user's);
+    /// older turns are dropped when they don't fit the model's prompt (the NPU takes ~1000 tokens).
+    /// </summary>
+    public string Converse(IReadOnlyList<ChatMessage> history)
+    {
+        if (history.Count == 0) throw new ArgumentException("empty chat", nameof(history));
+        const string system =
+            "You are a helpful assistant that runs locally on the user's computer. Answer in the language of the user's " +
+            "last message. Be concise and accurate; if you are not sure, say so. Use plain text, no Markdown tables.";
+        // Rough budget in characters: Cyrillic ~2-3 characters per token, the answer needs room too
+        int budget = Device.StartsWith("NPU (Ryzen", StringComparison.Ordinal) ? 3000
+                   : Device.StartsWith("NPU", StringComparison.Ordinal) ? 1800 : 10000;
+        var kept = new List<ChatMessage>();
+        int used = system.Length;
+        for (int i = history.Count - 1; i >= 0; i--)
+        {
+            var m = history[i];
+            if (kept.Count > 0 && used + m.Content.Length > budget) break;
+            kept.Insert(0, m);
+            used += m.Content.Length;
+        }
+        while (kept.Count > 1 && kept[0].Role != "user") kept.RemoveAt(0);   // start with the user's turn
+
+        var msgs = new List<object> { new { role = "system", content = system } };
+        foreach (var m in kept) msgs.Add(new { role = m.Role, content = m.Content });
+        var json = System.Text.Json.JsonSerializer.Serialize(msgs);
+        if (Status != State.Ready) throw new InvalidOperationException(L.T("err.not_ready", Message));
+        string raw;
+        lock (_gen)
+        {
+            var be = Volatile.Read(ref _backend) ?? throw new InvalidOperationException(L.T("err.unloaded"));
+            LastUsed = DateTime.Now;
+            try { raw = be.GenerateChat(json, false, NpuMinResponseTokens); }
+            catch (InvalidOperationException ex)
+            {
+                // A template without the system role: the conversation as plain text
+                Log.Write("Chat mode failed (" + ex.Message + "), falling back to a plain request");
+                var sb = new System.Text.StringBuilder(system).Append("\n\n");
+                foreach (var m in kept) sb.Append(m.Role == "user" ? "User: " : "Assistant: ").Append(m.Content).Append("\n\n");
+                sb.Append("Assistant:");
+                raw = be.GenerateText(sb.ToString(), NpuMinResponseTokens);
+            }
+            LastUsed = DateTime.Now;
+        }
+        if (raw.Contains("<think>") && !raw.Contains("</think>")) return "";
+        return Think.Replace(raw, "").Replace("<think>", "").Replace("</think>", "").Trim();
+    }
+
     /// <summary>Run an assistant task. langA/langB - translation pair, uiLang - language for explanations.</summary>
     public string Transform(AssistantTask task, string text, string langA, string langB, string uiLang)
     {
-        const string keep = " Keep the SAME language as the original (do not translate), keep all facts, names, numbers, " +
-                            "code and links. Reply with the rewritten text only, without comments or quotes.";
+        // Name the language explicitly: "keep the same language" alone was ignored (Mistral answered in English)
+        var lang = Languages.Get(Languages.Detect(text)).PromptName;
+        string keep = $" The text is in {lang}: write the result in {lang} too (do not translate), keep all facts, names, numbers, " +
+                      "code and links. Reply with the rewritten text only, without comments or quotes.";
         var none = Array.Empty<(string, string)>();
         switch (task.Action)
         {
@@ -295,7 +370,7 @@ internal sealed class AiCorrector : IDisposable
                     "and difficult words or terms. If it is code, explain what it does. Use a few short sentences.",
                     none, text, maxTokens: NpuMinResponseTokens);
             case AiAction.Reply:
-                return Chat("The user received this message. Write a short, polite reply to it in the same language as the message. " +
+                return Chat($"The user received this message. Write a short, polite reply to it in {lang}, the language of the message. " +
                     "Reply with the answer text only.", none, text, maxTokens: NpuMinResponseTokens);
             default:
                 throw new ArgumentOutOfRangeException(nameof(task));
@@ -360,7 +435,7 @@ internal sealed class AiCorrector : IDisposable
 
     private static readonly Regex Think = new(@"<think>.*?</think>", RegexOptions.Singleline | RegexOptions.Compiled);
 
-    private static string Clean(string raw, string original)
+    internal static string Clean(string raw, string original)
     {
         // The reasoning didn't fit and was cut off - no answer
         if (raw.Contains("<think>") && !raw.Contains("</think>")) return "";
@@ -375,6 +450,17 @@ internal sealed class AiCorrector : IDisposable
         int lead = original.Length - original.TrimStart().Length;
         int trail = original.Length - original.TrimEnd().Length;
         return original[..lead] + s + original[(original.Length - trail)..];
+    }
+
+    /// <summary>Use an already loaded backend (tests: a fake backend or a model loaded on a specific device).</summary>
+    internal void UseBackend(ILlmBackend backend, string modelName, string device)
+    {
+        Unload(wait: true);
+        Interlocked.Exchange(ref _backend, backend);
+        ModelName = modelName;
+        Device = device;
+        Status = State.Ready;
+        Message = L.T("st.ready_on", device, 0.0);
     }
 
     /// <summary>Unload the model. Non-blocking: if a correction is running, the model is released after it.</summary>

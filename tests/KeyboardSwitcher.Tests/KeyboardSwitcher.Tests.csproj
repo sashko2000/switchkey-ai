@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unit tests for Visual Studio Test Explorer / dotnet test (MSTest): layout detection and the model logic
+       (prompts, retries, device order, installation plans, local server backend) - no real model needed. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>KeyboardSwitcher.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CA1416;SYSLIB1054</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.6.4" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.6.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\KeyboardSwitcher\AiCorrector.cs" Link="App\AiCorrector.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\AiPlatform.cs" Link="App\AiPlatform.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\AiSetup.cs" Link="App\AiSetup.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\AmdSupport.cs" Link="App\AmdSupport.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\LlmBackend.cs" Link="App\LlmBackend.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\OpenVinoGenAI.cs" Link="App\OpenVinoGenAI.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\Loc.cs" Link="App\Loc.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\Layouts.cs" Link="App\Layouts.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\LayoutDetector.cs" Link="App\LayoutDetector.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\Settings.cs" Link="App\Settings.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\Native.cs" Link="App\Native.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\ChatStore.cs" Link="App\ChatStore.cs" />
+    <EmbeddedResource Include="..\..\src\KeyboardSwitcher\Resources\Strings.tsv" LogicalName="KeyboardSwitcher.Resources.Strings.tsv" />
+    <None Include="..\..\src\KeyboardSwitcher\Resources\*.txt" Link="Resources\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

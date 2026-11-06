@@ -18,3 +18,6 @@ tools/LangTest/lang_test_report.txt
 
 # Local NuGet settings (not part of the project)
 nuget.config
+
+# Model test reports
+model_test_report.md

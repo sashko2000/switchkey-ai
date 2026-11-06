@@ -10,8 +10,10 @@ namespace KeyboardSwitcher;
 /// <summary>A model from the catalog offered in settings.</summary>
 /// <param name="GgufRepo">llama.cpp version of the model (AMD: Radeon GPU and CPU).</param>
 /// <param name="NpuRepo">AMD Ryzen AI NPU version (ONNX); for some models a close relative (Qwen2.5 instead of Qwen3).</param>
+/// <param name="OpenVinoNpu">The OpenVINO version runs on the Intel NPU (symmetric per-channel INT4); otherwise GPU/CPU only.</param>
 public sealed record ModelInfo(string Id, string Repo, string FolderName, bool NeedsConversion, double SizeGb,
-    string? GgufRepo = null, string? GgufFile = null, long GgufBytes = 0, string? NpuRepo = null, double NpuGb = 0)
+    string? GgufRepo = null, string? GgufFile = null, long GgufBytes = 0, string? NpuRepo = null, double NpuGb = 0,
+    bool OpenVinoNpu = true)
 {
     public double GgufGb => GgufBytes / 1073741824.0;
 
@@ -37,19 +39,21 @@ internal static class AiSetup
     {
         new ModelInfo("qwen3-8b", "OpenVINO/Qwen3-8B-int4-cw-ov", "Qwen3-8B-int4-cw-ov", false, 4.75,
             "Qwen/Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf", 5027783488, "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu", 8.2),
-        new ModelInfo("mistral-7b", "OpenVINO/Mistral-7B-Instruct-v0.3-int4-cw-ov", "Mistral-7B-Instruct-v0.3-int4-cw-ov", false, 3.77,
-            "bartowski/Mistral-7B-Instruct-v0.3-GGUF", "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf", 4372812000, "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-npu", 7.5),
-        new ModelInfo("phi-3.5-mini", "OpenVINO/Phi-3.5-mini-instruct-int4-cw-ov", "Phi-3.5-mini-instruct-int4-cw-ov", false, 2.02,
-            "bartowski/Phi-3.5-mini-instruct-GGUF", "Phi-3.5-mini-instruct-Q4_K_M.gguf", 2393232672, "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu", 4.05),
-        new ModelInfo("qwen3-4b", "Qwen/Qwen3-4B", "Qwen3-4B-int4-npu", true, 2.5,
-            "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 2497280256, "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu", 3.81),
+        // Mistral-7B and Phi-3.5-mini were removed after the model tests (06.11.2026): weak in Russian, Ukrainian and Hindi.
+        // Qwen3-4B: the locally converted NPU version did not load, so the ready OpenVINO version is used (GPU and CPU only).
+        new ModelInfo("qwen3-4b", "OpenVINO/Qwen3-4B-int4-ov", "Qwen3-4B-int4-ov", false, 2.13,
+            "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 2497280256, "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu", 3.81,
+            OpenVinoNpu: false),
         new ModelInfo("qwen3-1.7b", "Qwen/Qwen3-1.7B", "Qwen3-1.7B-int4-npu", true, 1.2,
             "Qwen/Qwen3-1.7B-GGUF", "Qwen3-1.7B-Q8_0.gguf", 1834426016, "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu", 2.1),
     };
 
     public static ModelInfo FindModelInfo(string id) => Catalog.FirstOrDefault(m => m.Id == id) ?? Catalog[0];
 
-    public static string BaseDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeyboardSwitcher");
+    /// <summary>%LOCALAPPDATA%\KeyboardSwitcher; tests can move it with the KEYBOARDSWITCHER_HOME environment variable.</summary>
+    public static string BaseDir =>
+        Environment.GetEnvironmentVariable("KEYBOARDSWITCHER_HOME") is { Length: > 0 } home ? home
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeyboardSwitcher");
     public static string RuntimeDir => Path.Combine(BaseDir, "openvino", OpenVinoVersion);
     public static string ModelsDir => Path.Combine(BaseDir, "models");
     internal static string DownloadsDir => Path.Combine(BaseDir, "downloads");
