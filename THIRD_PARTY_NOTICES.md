@@ -14,4 +14,4 @@
 | Gemma 4 (Google) | Apache 2.0 | models downloaded at the user's choice (GGUF, quantized by Unsloth) |
 
 OpenVINO, llama.cpp, the CUDA libraries, ryzenai-server, the models and (for conversion) Python with Intel's tools are not part of the app:
-they are downloaded from their publishers when the user enables text correction in settings.
+they are downloaded from their publishers when the user turns on the language model in settings.

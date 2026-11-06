@@ -20,11 +20,16 @@ internal sealed class AssistantWindow
         bool PasteToSource(string text);
         bool CanPasteToSource { get; }
         void AssistantClosed();
+        /// <summary>Models for the list (local and network) and the one in use.</summary>
+        IReadOnlyList<(string Id, string Title)> ModelChoices { get; }
+        string CurrentModel { get; }
+        /// <summary>Use another model everywhere (the same as in settings).</summary>
+        void SelectModel(string id);
     }
 
     private const string ClassName = "KeyboardSwitcherAssistant";
     private const int ID_SOURCE = 100, ID_ACTION = 101, ID_RUN = 102, ID_STATUS = 103, ID_RESULT = 104,
-        ID_COPY = 105, ID_PASTE = 106, ID_TO_SOURCE = 107, ID_CLOSE = 2;
+        ID_COPY = 105, ID_PASTE = 106, ID_TO_SOURCE = 107, ID_MODEL = 108, ID_CLOSE = 2;
     private const uint ES_MULTILINE = 0x4, ES_READONLY = 0x800, ES_AUTOVSCROLL = 0x40, ES_WANTRETURN = 0x1000,
         WS_EX_TOOLWINDOW = 0x80, EM_SETSEL = 0x00B1;
     private static WndProc? _classProc;
@@ -36,6 +41,7 @@ internal sealed class AssistantWindow
     private double _scale = 1;
     private string _result = "";
     private List<AssistantTask> _tasks = AssistantTask.All();
+    private IReadOnlyList<(string Id, string Title)> _choices = Array.Empty<(string, string)>();
 
     public IntPtr Hwnd => _hwnd;
     public AssistantWindow(IHost host) => _host = host;
@@ -76,7 +82,7 @@ internal sealed class AssistantWindow
         _font = CreateFont(-(int)Math.Round(10 * GetDpiForSystem() / 72.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
         const uint style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
         const uint exStyle = WS_EX_CONTROLPARENT;
-        int cw = 640, ch = 534;
+        int cw = 640, ch = 568;
         var rc = new RECT { Right = S(cw), Bottom = S(ch) };
         AdjustWindowRectEx(ref rc, style, false, exStyle);
         int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
@@ -91,19 +97,22 @@ internal sealed class AssistantWindow
             _hwnd = CreateWindowEx(exStyle, ClassName, L.T("aw.title"), style, x, y, w, h, IntPtr.Zero, IntPtr.Zero, hInst, IntPtr.Zero);
             if (_hwnd == IntPtr.Zero) { Log.Write("Assistant window was not created: " + Marshal.GetLastWin32Error()); return; }
 
-            Child(0, "STATIC", L.T("aw.source"), 0, 10, 8, 620, 20);
-            Child(ID_SOURCE, "EDIT", "", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP, 10, 28, 620, 150, WS_EX_CLIENTEDGE);
-            Child(0, "STATIC", L.T("aw.action"), 0, 10, 190, 72, 20);
-            var cmb = Child(ID_ACTION, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 84, 186, 330, 300);
+            Child(0, "STATIC", L.T("aw.model"), 0, 10, 12, 72, 20);
+            var mc = Child(ID_MODEL, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 84, 8, 546, 400);
+            ModelChoices.Fill(mc, _choices = _host.ModelChoices, _host.CurrentModel);
+            Child(0, "STATIC", L.T("aw.source"), 0, 10, 42, 620, 20);
+            Child(ID_SOURCE, "EDIT", "", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP, 10, 62, 620, 150, WS_EX_CLIENTEDGE);
+            Child(0, "STATIC", L.T("aw.action"), 0, 10, 224, 72, 20);
+            var cmb = Child(ID_ACTION, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 84, 220, 330, 300);
             _tasks = AssistantTask.All();
             foreach (var t in _tasks) SendMessage(cmb, CB_ADDSTRING, IntPtr.Zero, t.Title(_host.LangA, _host.LangB));
-            Child(ID_RUN, "BUTTON", L.T("aw.run"), BS_DEFPUSHBUTTON | WS_TABSTOP, 422, 185, 208, 28);
-            Child(ID_STATUS, "STATIC", L.T("aw.result"), SS_NOPREFIX, 10, 224, 620, 20);
-            Child(ID_RESULT, "EDIT", "", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP, 10, 244, 620, 238, WS_EX_CLIENTEDGE);
-            Child(ID_COPY, "BUTTON", L.T("aw.copy"), BS_PUSHBUTTON | WS_TABSTOP, 10, 494, 120, 30);
-            Child(ID_PASTE, "BUTTON", L.T("aw.paste"), BS_PUSHBUTTON | WS_TABSTOP, 136, 494, 220, 30);
-            Child(ID_TO_SOURCE, "BUTTON", L.T("aw.to_source"), BS_PUSHBUTTON | WS_TABSTOP, 362, 494, 150, 30);
-            Child(ID_CLOSE, "BUTTON", L.T("aw.close"), BS_PUSHBUTTON | WS_TABSTOP, 540, 494, 90, 30);
+            Child(ID_RUN, "BUTTON", L.T("aw.run"), BS_DEFPUSHBUTTON | WS_TABSTOP, 422, 219, 208, 28);
+            Child(ID_STATUS, "STATIC", L.T("aw.result"), SS_NOPREFIX, 10, 258, 620, 20);
+            Child(ID_RESULT, "EDIT", "", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP, 10, 278, 620, 238, WS_EX_CLIENTEDGE);
+            Child(ID_COPY, "BUTTON", L.T("aw.copy"), BS_PUSHBUTTON | WS_TABSTOP, 10, 528, 120, 30);
+            Child(ID_PASTE, "BUTTON", L.T("aw.paste"), BS_PUSHBUTTON | WS_TABSTOP, 136, 528, 220, 30);
+            Child(ID_TO_SOURCE, "BUTTON", L.T("aw.to_source"), BS_PUSHBUTTON | WS_TABSTOP, 362, 528, 150, 30);
+            Child(ID_CLOSE, "BUTTON", L.T("aw.close"), BS_PUSHBUTTON | WS_TABSTOP, 540, 528, 90, 30);
         }
         finally { if (oldCtx != IntPtr.Zero) SetThreadDpiAwarenessContext(oldCtx); }
     }
@@ -137,6 +146,13 @@ internal sealed class AssistantWindow
     }
 
     // ------------------------------------------------------------------ called by the app
+
+    /// <summary>The model list or the selected model changed (settings, the chat window).</summary>
+    public void RefreshModels()
+    {
+        if (_hwnd == IntPtr.Zero || !_ctl.TryGetValue(ID_MODEL, out var mc)) return;
+        ModelChoices.Fill(mc, _choices = _host.ModelChoices, _host.CurrentModel);
+    }
 
     public void SetBusy(bool busy, string? status = null)
     {
@@ -246,6 +262,11 @@ internal sealed class AssistantWindow
                         return GetSysColorBrush(COLOR_BTNFACE);
                     case WM_COMMAND:
                         if ((((int)wParam >> 16) & 0xFFFF) == BN_CLICKED) self.OnCommand((int)wParam & 0xFFFF);
+                        else if ((((int)wParam >> 16) & 0xFFFF) == CBN_SELCHANGE && ((int)wParam & 0xFFFF) == ID_MODEL)
+                        {
+                            var id = ModelChoices.Selected(self._ctl[ID_MODEL], self._choices);
+                            if (id != null && id != self._host.CurrentModel) self._host.SelectModel(id);
+                        }
                         return IntPtr.Zero;
                     case WM_CLOSE:
                         self.Close();

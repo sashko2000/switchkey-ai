@@ -24,6 +24,7 @@
     <Compile Include="..\..\src\KeyboardSwitcher\Native.cs" />
     <Compile Include="..\..\src\KeyboardSwitcher\ChatStore.cs" />
     <Compile Include="..\..\src\KeyboardSwitcher\NvidiaSupport.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\NetModels.cs" />
     <EmbeddedResource Include="..\..\src\KeyboardSwitcher\Resources\Strings.tsv" LogicalName="KeyboardSwitcher.Resources.Strings.tsv" />
   </ItemGroup>
 </Project>

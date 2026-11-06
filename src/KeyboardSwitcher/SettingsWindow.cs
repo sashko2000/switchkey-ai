@@ -7,9 +7,8 @@ namespace KeyboardSwitcher;
 internal sealed class SettingsWindow
 {
     /// <summary>What the window needs from the app.</summary>
-    public interface IHost
+    public interface IHost : NetModelsWindow.IHost
     {
-        Settings Settings { get; }
         bool Autostart { get; }
         string AiStatusText { get; }
         bool InstallRunning { get; }
@@ -25,7 +24,7 @@ internal sealed class SettingsWindow
         ID_APP_COMBO = 1020, ID_APP_ADD = 1021, ID_APP_LIST = 1022, ID_APP_REMOVE = 1023,
         ID_AI = 1030, ID_MODEL = 1031, ID_MODEL_NOTE = 1032, ID_STATUS = 1033,
         ID_HK_TR = 1050, ID_HK_TR_DEF = 1051, ID_HK_TR_OFF = 1052, ID_HK_CHAT = 1066, ID_HK_CHAT_DEF = 1067, ID_HK_CHAT_OFF = 1068, ID_TR_MODE = 1053, ID_UNLOAD = 1054, ID_ON_DEMAND = 1055,
-        ID_UI_LANG = 1060, ID_LANG_A = 1061, ID_LANG_B = 1062, ID_LAYOUT_PRIO = 1063, ID_DEVICE = 1064, ID_DEVICE_INFO = 1065, ID_NVIDIA = 1069;
+        ID_UI_LANG = 1060, ID_LANG_A = 1061, ID_LANG_B = 1062, ID_LAYOUT_PRIO = 1063, ID_DEVICE = 1064, ID_DEVICE_INFO = 1065, ID_NVIDIA = 1069, ID_NET = 1070, ID_CODE = 1071;
 
     private const string ClassName = "KeyboardSwitcherSettings";
     private static WndProc? _classProc;      // one delegate per window class
@@ -76,7 +75,7 @@ internal sealed class SettingsWindow
 
         const uint style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
         const uint exStyle = WS_EX_CONTROLPARENT;
-        var rc = new RECT { Right = S(840), Bottom = S(546) };
+        var rc = new RECT { Right = S(840), Bottom = S(560) };
         AdjustWindowRectEx(ref rc, style, false, exStyle);
         int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
         int x = (GetSystemMetrics(0) - w) / 2, y = (GetSystemMetrics(1) - h) / 2;
@@ -167,56 +166,58 @@ internal sealed class SettingsWindow
         HotkeyRow(250, L.T("sw.hk.tr"), ID_HK_TR, ID_HK_TR_DEF, ID_HK_TR_OFF);
         HotkeyRow(282, L.T("sw.hk.chat"), ID_HK_CHAT, ID_HK_CHAT_DEF, ID_HK_CHAT_OFF);
 
-        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 328, 408, 172);
+        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 328, 408, 178);
         Ctl(ID_APP_COMBO, "COMBOBOX", "", CBS_DROPDOWN | CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_TABSTOP, 20, 352, 250, 220);
         Ctl(ID_APP_ADD, "BUTTON", L.T("sw.add"), BS_PUSHBUTTON | WS_TABSTOP, 278, 351, 126, 26);
-        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 384, 250, 104, WS_EX_CLIENTEDGE);
+        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 384, 250, 82, WS_EX_CLIENTEDGE);
         Ctl(ID_APP_REMOVE, "BUTTON", L.T("sw.remove"), BS_PUSHBUTTON | WS_TABSTOP, 278, 384, 126, 26);
-        Label(L.T("sw.excl_hint"), 278, 416, 126, 78);
+        Label(L.T("sw.excl_hint"), 278, 416, 126, 50);
+        Ctl(ID_CODE, "BUTTON", L.T("sw.code_editors"), BS_AUTOCHECKBOX | WS_TABSTOP, 20, 472, 388, 24);
 
         // ---------- right column: model
-        Ctl(0, "BUTTON", L.T("sw.ai_group"), BS_GROUPBOX, 428, 6, 404, 486);
+        Ctl(0, "BUTTON", L.T("sw.ai_group"), BS_GROUPBOX, 428, 6, 404, 500);
         Ctl(ID_AI, "BUTTON", L.T("sw.ai_enable"), BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, 440, 30, 384, 22);
         Label(L.T("sw.model"), 440, 66, 60);
-        var cmb = Ctl(ID_MODEL, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 500, 62, 320, 200);
-        // With the download size for this computer (OpenVINO or GGUF version)
-        foreach (var m in AiSetup.Catalog) SendMessage(cmb, CB_ADDSTRING, IntPtr.Zero, L.T("sw.model_item", m.Title, AiPlatform.DownloadGb(m)));
-        Label("", 440, 94, 380, 54, ID_MODEL_NOTE);
+        // Catalog models with the download size for this computer, then network models
+        var cmb = Ctl(ID_MODEL, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 500, 62, 214, 400);
+        SendMessage(cmb, CB_SETDROPPEDWIDTH, (IntPtr)S(330), IntPtr.Zero);
+        Ctl(ID_NET, "BUTTON", L.T("sw.net_button"), BS_PUSHBUTTON | WS_TABSTOP, 720, 61, 100, 26);
+        Label("", 440, 94, 380, 68, ID_MODEL_NOTE);
 
-        Label(L.T("sw.pair"), 440, 158, 140);
-        var la = Ctl(ID_LANG_A, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 584, 154, 110, 200);
-        Label("<->", 698, 158, 22);
-        var lb = Ctl(ID_LANG_B, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 722, 154, 98, 200);
+        Label(L.T("sw.pair"), 440, 172, 140);
+        var la = Ctl(ID_LANG_A, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 584, 168, 110, 200);
+        Label("<->", 698, 172, 22);
+        var lb = Ctl(ID_LANG_B, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 722, 168, 98, 200);
         foreach (var l in Languages.All)
         {
             SendMessage(la, CB_ADDSTRING, IntPtr.Zero, L.LangName(l.Code));
             SendMessage(lb, CB_ADDSTRING, IntPtr.Zero, L.LangName(l.Code));
         }
 
-        Label(L.T("sw.tr_out"), 440, 190, 140);
-        var tr = Ctl(ID_TR_MODE, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 186, 236, 120);
+        Label(L.T("sw.tr_out"), 440, 204, 140);
+        var tr = Ctl(ID_TR_MODE, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 200, 236, 120);
         SendMessage(tr, CB_ADDSTRING, IntPtr.Zero, L.T("sw.tr_out.window"));
         SendMessage(tr, CB_ADDSTRING, IntPtr.Zero, L.T("sw.tr_out.replace"));
 
-        Label(L.T("sw.unload"), 440, 222, 140);
-        var un = Ctl(ID_UNLOAD, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 218, 236, 160);
+        Label(L.T("sw.unload"), 440, 236, 140);
+        var un = Ctl(ID_UNLOAD, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 232, 236, 160);
         foreach (var m in UnloadMinutes) SendMessage(un, CB_ADDSTRING, IntPtr.Zero, UnloadText(m));
 
-        Label(L.T("sw.device"), 440, 254, 140);
-        var dv = Ctl(ID_DEVICE, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 250, 236, 160);
+        Label(L.T("sw.device"), 440, 268, 140);
+        var dv = Ctl(ID_DEVICE, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP, 584, 264, 236, 160);
         foreach (var k in new[] { "sw.dev.auto", "sw.dev.npu", "sw.dev.gpu", "sw.dev.cpu" }) SendMessage(dv, CB_ADDSTRING, IntPtr.Zero, L.T(k));
         // Up to 4 devices with long names (Intel iGPU + NVIDIA dGPU) - room for three lines
-        Label(L.T(AiPlatform.CanDetectDevices ? "sw.dev.detecting" : "sw.dev.unknown"), 440, 280, 380, 54, ID_DEVICE_INFO);
+        Label(L.T(AiPlatform.CanDetectDevices ? "sw.dev.detecting" : "sw.dev.unknown"), 440, 294, 380, 54, ID_DEVICE_INFO);
 
-        Ctl(ID_NVIDIA, "BUTTON", L.T("sw.nvidia"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 336, 384, 22);
-        Ctl(ID_ON_DEMAND, "BUTTON", L.T("sw.on_demand"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 360, 384, 22);
-        Label(L.T("sw.memory_hint"), 440, 386, 380, 46);
-        Label("", 440, 434, 380, 66, ID_STATUS);
+        Ctl(ID_NVIDIA, "BUTTON", L.T("sw.nvidia"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 350, 384, 22);
+        Ctl(ID_ON_DEMAND, "BUTTON", L.T("sw.on_demand"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 374, 384, 22);
+        Label(L.T("sw.memory_hint"), 440, 400, 380, 46);
+        Label("", 440, 448, 380, 54, ID_STATUS);
 
         // ---------- buttons
-        Ctl(ID_OK, "BUTTON", L.T("sw.ok"), BS_DEFPUSHBUTTON | WS_TABSTOP | WS_GROUP, 576, 506, 80, 28);
-        Ctl(ID_CANCEL, "BUTTON", L.T("sw.cancel"), BS_PUSHBUTTON | WS_TABSTOP, 664, 506, 80, 28);
-        Ctl(ID_APPLY, "BUTTON", L.T("sw.apply"), BS_PUSHBUTTON | WS_TABSTOP, 752, 506, 80, 28);
+        Ctl(ID_OK, "BUTTON", L.T("sw.ok"), BS_DEFPUSHBUTTON | WS_TABSTOP | WS_GROUP, 576, 520, 80, 28);
+        Ctl(ID_CANCEL, "BUTTON", L.T("sw.cancel"), BS_PUSHBUTTON | WS_TABSTOP, 664, 520, 80, 28);
+        Ctl(ID_APPLY, "BUTTON", L.T("sw.apply"), BS_PUSHBUTTON | WS_TABSTOP, 752, 520, 80, 28);
     }
 
     // ------------------------------------------------------------------ values
@@ -239,6 +240,7 @@ internal sealed class SettingsWindow
         SendMessage(_ctl[ID_LANG_B], CB_SETCURSEL, (IntPtr)LangIndex(s.TranslateLangB), IntPtr.Zero);
         SetCheck(ID_ON_DEMAND, s.AiLoadOnDemand);
         SetCheck(ID_NVIDIA, s.AiNvidia);
+        SetCheck(ID_CODE, s.SkipCodeEditors);
         int di = Array.FindIndex(DeviceCodes, c => string.Equals(c, s.AiDevice, StringComparison.OrdinalIgnoreCase));
         SendMessage(_ctl[ID_DEVICE], CB_SETCURSEL, (IntPtr)Math.Max(0, di), IntPtr.Zero);
 
@@ -247,8 +249,7 @@ internal sealed class SettingsWindow
         foreach (var a in RunningApps()) SendMessage(_ctl[ID_APP_COMBO], CB_ADDSTRING, IntPtr.Zero, a);
 
         SetCheck(ID_AI, s.AiEnabled);
-        int idx = Math.Max(0, AiSetup.Catalog.ToList().FindIndex(m => m.Id == s.AiModel));
-        SendMessage(_ctl[ID_MODEL], CB_SETCURSEL, (IntPtr)idx, IntPtr.Zero);
+        ModelChoices.Fill(_ctl[ID_MODEL], _choices = ModelChoices.All(s), s.AiModel);
         UpdateModelNote();
         UpdateStatus(_host.AiStatusText);
     }
@@ -273,8 +274,10 @@ internal sealed class SettingsWindow
             AssistantLastTask = src.AssistantLastTask,
             AiLoadOnDemand = GetCheck(ID_ON_DEMAND),
             AiNvidia = GetCheck(ID_NVIDIA),
+            SkipCodeEditors = GetCheck(ID_CODE),
             AiEnabled = GetCheck(ID_AI),
-            AiModel = SelectedModel().Id,
+            AiModel = SelectedChoice(),
+            NetModels = src.NetModels,
             ModelPath = src.ModelPath,
             AiDevices = src.AiDevices,
             AiDevice = DeviceCodes[Math.Clamp((int)SendMessage(_ctl[ID_DEVICE], CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero), 0, DeviceCodes.Length - 1)],
@@ -314,15 +317,30 @@ internal sealed class SettingsWindow
         return Languages.All[Math.Clamp(i, 0, Languages.All.Count - 1)].Code;
     }
 
-    private ModelInfo SelectedModel()
+    private IReadOnlyList<(string Id, string Title)> _choices = Array.Empty<(string, string)>();
+
+    private string SelectedChoice() => ModelChoices.Selected(_ctl[ID_MODEL], _choices) ?? AiSetup.Catalog[0].Id;
+
+    /// <summary>The network models or the selected model changed (network models window, assistant, chat).</summary>
+    public void RefreshModels(string? select = null)
     {
-        int i = (int)SendMessage(_ctl[ID_MODEL], CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero);
-        return AiSetup.Catalog[Math.Clamp(i, 0, AiSetup.Catalog.Count - 1)];
+        if (_hwnd == IntPtr.Zero || !_ctl.TryGetValue(ID_MODEL, out var cmb)) return;
+        var keep = select ?? SelectedChoice();
+        ModelChoices.Fill(cmb, _choices = ModelChoices.All(_host.Settings), keep);
+        UpdateModelNote();
     }
 
     private void UpdateModelNote()
     {
-        var m = SelectedModel();
+        var choice = SelectedChoice();
+        if (NetModels.IsNet(choice))
+        {
+            var n = _host.Settings.NetModels.FirstOrDefault(x => x.Choice == choice);
+            SetWindowText(_ctl[ID_MODEL_NOTE], n == null ? "" :
+                L.T(NetModels.IsLocalServer(n) ? "sw.net_note_local" : "sw.net_note", NetModels.Find(n.Provider).Title, n.Model));
+            return;
+        }
+        var m = AiSetup.FindModelInfo(choice);
         // The plan depends on the processor (AMD: other engines and model formats) and on the chosen device
         var probe = _host.Settings;
         var cur = new Settings { AiModel = m.Id, AiDevice = SelectedDevice(), ModelPath = probe.ModelPath, AiDevices = probe.AiDevices,
@@ -517,6 +535,9 @@ internal sealed class SettingsWindow
             case ID_DEVICE when code == CBN_SELCHANGE:
             case ID_NVIDIA when code == BN_CLICKED:
                 UpdateModelNote();
+                break;
+            case ID_NET when code == BN_CLICKED:
+                NetModelsWindow.Open(_host, _hwnd, IntPtr.Zero);
                 break;
         }
     }

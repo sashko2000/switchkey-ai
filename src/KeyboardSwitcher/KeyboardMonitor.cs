@@ -39,6 +39,9 @@ internal sealed class KeyboardMonitor : IDisposable
     /// <summary>Raised when the user undoes an auto-correction of a word (to remember it).</summary>
     public event Action<string>? WordRejected;
 
+    /// <summary>Is the focus in a code editor (no auto-correction there).</summary>
+    public readonly CodeEditorProbe Editors = new();
+
     public KeyboardMonitor(LayoutDetector detector) => _detector = detector;
 
     public void SetExcludedApps(IEnumerable<string> apps)
@@ -84,6 +87,7 @@ internal sealed class KeyboardMonitor : IDisposable
     {
         if (_threadId != 0) PostThreadMessage(_threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
         _thread?.Join(1000);
+        Editors.Dispose();
     }
 
     // ------------------------------------------------------------------ hook
@@ -149,6 +153,7 @@ internal sealed class KeyboardMonitor : IDisposable
             {
                 if (_word.Count == 0)
                 {
+                    Editors.Check(fg);   // the answer comes from a background thread before the word ends
                     _prev = _last?.SeparatorVk == VK_SPACE ? _last : null;
                     _last = null;
                 }
@@ -176,7 +181,7 @@ internal sealed class KeyboardMonitor : IDisposable
                 var lang = Input.CurrentLang();
                 if (lang == null) { _last = null; _prevLang = null; return false; }
                 var cands = Input.InstalledLangs();
-                bool allowed = AutoSwitch && !IsExcluded(fg) && cands.Contains(lang.Value);
+                bool allowed = AutoSwitch && !IsExcluded(fg) && !Editors.InCodeEditor && cands.Contains(lang.Value);
 
                 // Single letter ("z" -> "я"): only if the previous word was in another language
                 if (keys.Count == 1)

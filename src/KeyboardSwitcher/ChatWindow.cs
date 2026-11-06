@@ -15,11 +15,14 @@ internal sealed class ChatWindow
         /// <summary>Send the conversation to the model; done(answer, error) is called on the main thread.</summary>
         void SendChat(IReadOnlyList<ChatMessage> history, Action<string?, string?> done);
         void ChatClosed();
+        IReadOnlyList<(string Id, string Title)> ModelChoices { get; }
+        string CurrentModel { get; }
+        void SelectModel(string id);
     }
 
     private const string ClassName = "KeyboardSwitcherChat";
     private const int ID_HISTORY = 200, ID_NEW = 201, ID_DELETE = 202, ID_LOG = 203, ID_STATUS = 204, ID_INPUT = 205,
-        ID_SEND = 206, ID_COPY = 207, ID_CLOSE = 2;
+        ID_SEND = 206, ID_COPY = 207, ID_MODEL = 208, ID_CLOSE = 2;
     private const uint ES_MULTILINE = 0x4, ES_READONLY = 0x800, ES_AUTOVSCROLL = 0x40, ES_WANTRETURN = 0x1000,
         EM_SETSEL = 0x00B1, EM_SCROLLCARET = 0x00B7, CBN_SELCHANGE_CODE = 1;
     private static WndProc? _classProc;
@@ -28,6 +31,7 @@ internal sealed class ChatWindow
     private readonly IHost _host;
     private IntPtr _hwnd, _font;
     private readonly Dictionary<int, IntPtr> _ctl = new();
+    private IReadOnlyList<(string Id, string Title)> _choices = Array.Empty<(string, string)>();
     private double _scale = 1;
     private ChatSession _chat = new();
     private List<ChatSession> _saved = new();
@@ -75,7 +79,7 @@ internal sealed class ChatWindow
         _font = CreateFont(-(int)Math.Round(10 * GetDpiForSystem() / 72.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, "Segoe UI");
         const uint style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
         const uint exStyle = WS_EX_CONTROLPARENT;
-        var rc = new RECT { Right = S(680), Bottom = S(600) };
+        var rc = new RECT { Right = S(680), Bottom = S(634) };
         AdjustWindowRectEx(ref rc, style, false, exStyle);
         int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
         int x = Math.Max(0, (GetSystemMetrics(0) - w) / 2), y = Math.Max(0, (GetSystemMetrics(1) - h) / 2);
@@ -87,16 +91,19 @@ internal sealed class ChatWindow
             _hwnd = CreateWindowEx(exStyle, ClassName, L.T("cw.title"), style, x, y, w, h, IntPtr.Zero, IntPtr.Zero, hInst, IntPtr.Zero);
             if (_hwnd == IntPtr.Zero) { Log.Write("Chat window was not created: " + Marshal.GetLastWin32Error()); return; }
 
-            Child(0, "STATIC", L.T("cw.history"), 0, 10, 12, 70, 20);
-            Child(ID_HISTORY, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 82, 8, 360, 300);
-            Child(ID_NEW, "BUTTON", L.T("cw.new"), BS_PUSHBUTTON | WS_TABSTOP, 450, 7, 110, 28);
-            Child(ID_DELETE, "BUTTON", L.T("cw.delete"), BS_PUSHBUTTON | WS_TABSTOP, 566, 7, 104, 28);
-            Child(ID_LOG, "EDIT", "", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP, 10, 44, 660, 346, WS_EX_CLIENTEDGE);
-            Child(ID_STATUS, "STATIC", "", SS_NOPREFIX, 10, 396, 660, 20);
-            Child(ID_INPUT, "EDIT", "", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP, 10, 418, 660, 130, WS_EX_CLIENTEDGE);
-            Child(ID_SEND, "BUTTON", L.T("cw.send"), BS_DEFPUSHBUTTON | WS_TABSTOP, 10, 558, 220, 32);
-            Child(ID_COPY, "BUTTON", L.T("cw.copy"), BS_PUSHBUTTON | WS_TABSTOP, 236, 558, 160, 32);
-            Child(ID_CLOSE, "BUTTON", L.T("aw.close"), BS_PUSHBUTTON | WS_TABSTOP, 570, 558, 100, 32);
+            Child(0, "STATIC", L.T("aw.model"), 0, 10, 12, 70, 20);
+            var mc = Child(ID_MODEL, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 82, 8, 588, 400);
+            ModelChoices.Fill(mc, _choices = _host.ModelChoices, _host.CurrentModel);
+            Child(0, "STATIC", L.T("cw.history"), 0, 10, 46, 70, 20);
+            Child(ID_HISTORY, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 82, 42, 360, 300);
+            Child(ID_NEW, "BUTTON", L.T("cw.new"), BS_PUSHBUTTON | WS_TABSTOP, 450, 41, 110, 28);
+            Child(ID_DELETE, "BUTTON", L.T("cw.delete"), BS_PUSHBUTTON | WS_TABSTOP, 566, 41, 104, 28);
+            Child(ID_LOG, "EDIT", "", ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP, 10, 78, 660, 346, WS_EX_CLIENTEDGE);
+            Child(ID_STATUS, "STATIC", "", SS_NOPREFIX, 10, 430, 660, 20);
+            Child(ID_INPUT, "EDIT", "", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP, 10, 452, 660, 130, WS_EX_CLIENTEDGE);
+            Child(ID_SEND, "BUTTON", L.T("cw.send"), BS_DEFPUSHBUTTON | WS_TABSTOP, 10, 592, 220, 32);
+            Child(ID_COPY, "BUTTON", L.T("cw.copy"), BS_PUSHBUTTON | WS_TABSTOP, 236, 592, 160, 32);
+            Child(ID_CLOSE, "BUTTON", L.T("aw.close"), BS_PUSHBUTTON | WS_TABSTOP, 570, 592, 100, 32);
         }
         finally { if (oldCtx != IntPtr.Zero) SetThreadDpiAwarenessContext(oldCtx); }
     }
@@ -196,6 +203,13 @@ internal sealed class ChatWindow
 
     // ------------------------------------------------------------------ called by the app
 
+    /// <summary>The model list or the selected model changed (settings, the assistant window).</summary>
+    public void RefreshModels()
+    {
+        if (_hwnd == IntPtr.Zero || !_ctl.TryGetValue(ID_MODEL, out var mc)) return;
+        ModelChoices.Fill(mc, _choices = _host.ModelChoices, _host.CurrentModel);
+    }
+
     public void SetBusy(bool busy, string? status = null)
     {
         _busy = busy;
@@ -248,6 +262,12 @@ internal sealed class ChatWindow
         switch (id)
         {
             case ID_HISTORY when code == CBN_SELCHANGE_CODE: OnHistorySelected(); break;
+            case ID_MODEL when code == CBN_SELCHANGE_CODE:
+                {
+                    var model = ModelChoices.Selected(_ctl[ID_MODEL], _choices);
+                    if (model != null && model != _host.CurrentModel) _host.SelectModel(model);
+                    break;
+                }
             case ID_NEW when code == BN_CLICKED: NewChat(); break;
             case ID_DELETE when code == BN_CLICKED: DeleteChat(); break;
             case ID_SEND when code == BN_CLICKED: Send(); break;

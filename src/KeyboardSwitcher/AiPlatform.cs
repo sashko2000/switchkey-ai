@@ -36,11 +36,12 @@ internal static class AiPlatform
     public static bool LlamaBlocked => Hardware.SmartAppControlOn;
 
     /// <summary>The user allowed the NVIDIA card and there is one (with a driver new enough for CUDA 12.4).</summary>
-    public static bool UseNvidia(Settings s) => s.AiNvidia && !LlamaBlocked && Nvidia.Present;
+    public static bool UseNvidia(Settings s) => s.AiNvidia && !NetModels.IsNet(s.AiModel) && !LlamaBlocked && Nvidia.Present;
 
     /// <summary>The NVIDIA card is allowed, but llama.cpp CUDA or the model's GGUF file is not installed yet.</summary>
     public static bool NvidiaMissing(Settings s)
     {
+        if (NetModels.IsNet(s.AiModel)) return false;
         var m = AiSetup.FindModelInfo(s.AiModel);
         return UseNvidia(s) && m.GgufFile != null && (!Nvidia.CudaInstalled || !AmdEngines.GgufInstalled(m));
     }
@@ -73,6 +74,12 @@ internal static class AiPlatform
     /// <summary>Identity of what will be loaded (to notice that the model or device changed). null - not installed.</summary>
     public static string? InstalledKey(Settings s)
     {
+        // A network model needs nothing installed; the key changes when its address, model or API key change
+        if (NetModels.IsNet(s.AiModel))
+        {
+            var n = NetModels.Selected(s);
+            return n == null ? null : $"net|{n.Id}|{n.Provider}|{n.BaseUrl}|{n.Model}|{n.ApiKey.GetHashCode():X}";
+        }
         var m = AiSetup.FindModelInfo(s.AiModel);
         var parts = new List<string>();
         bool gguf = AmdEngines.GgufInstalled(m);
@@ -94,6 +101,7 @@ internal static class AiPlatform
 
     public static string ModelName(Settings s)
     {
+        if (NetModels.Selected(s) is { } n) return n.Title;
         var m = AiSetup.FindModelInfo(s.AiModel);
         if (!UsesLlama(m)) return Path.GetFileName((AiCorrector.FindModel(s) ?? m.FolderName).TrimEnd('\\', '/'));
         return m.GgufFile != null ? Path.GetFileNameWithoutExtension(m.GgufFile) : m.Id;
@@ -115,7 +123,8 @@ internal static class AiPlatform
 
     // ------------------------------------------------------------------ installation
 
-    public static (List<string> steps, double gb) Plan(Settings s) => Plan(s, AiSetup.FindModelInfo(s.AiModel));
+    public static (List<string> steps, double gb) Plan(Settings s) =>
+        NetModels.IsNet(s.AiModel) ? (new List<string>(), 0) : Plan(s, AiSetup.FindModelInfo(s.AiModel));
 
     internal static (List<string> steps, double gb) Plan(Settings s, ModelInfo m)
     {
@@ -155,6 +164,7 @@ internal static class AiPlatform
 
     public static async Task InstallAsync(Settings s, IProgress<string> progress, CancellationToken ct)
     {
+        if (NetModels.IsNet(s.AiModel)) { progress.Report(L.T("pr.done")); return; }
         var m = AiSetup.FindModelInfo(s.AiModel);
         Directory.CreateDirectory(AiSetup.BaseDir);
         // The NVIDIA card first: it is the fastest device, so the model can start there while the rest downloads later
@@ -180,6 +190,14 @@ internal static class AiPlatform
     public static List<LoadCandidate> Candidates(Settings s)
     {
         var list = new List<LoadCandidate>();
+        if (NetModels.IsNet(s.AiModel))
+        {
+            var n = NetModels.Selected(s) ?? throw new InvalidOperationException(L.T("err.net_deleted"));
+            var copy = n.Copy();
+            list.Add(new LoadCandidate(L.T("dev.net", NetModels.Find(n.Provider).Title, n.Model),
+                () => new NetBackend(copy, Secret.Unprotect(copy.ApiKey))));
+            return list;
+        }
         var m = AiSetup.FindModelInfo(s.AiModel);
 
         // NVIDIA (CUDA) first, if allowed: the whole model if it fits into the card's free memory right now,

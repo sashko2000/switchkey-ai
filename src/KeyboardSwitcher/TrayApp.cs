@@ -7,7 +7,7 @@ using static KeyboardSwitcher.Native;
 namespace KeyboardSwitcher;
 
 /// <summary>Tray icon, menu and hotkeys. Runs on the app's main thread.</summary>
-internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWindow.IHost, ChatWindow.IHost
+internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWindow.IHost, ChatWindow.IHost, NetModelsWindow.IHost
 {
     private const uint WM_TRAY = WM_APP + 1, WM_INVOKE = WM_APP + 2;
     private const int HK_LAST = 1, HK_SELECTION = 2, HK_AI = 3, HK_TRANSLATE = 4, HK_CHAT = 5;
@@ -80,10 +80,15 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             if (aw != IntPtr.Zero && (_assistant!.PreTranslate(ref msg) || IsDialogMessage(aw, ref msg))) continue;
             var cw = _chat?.Hwnd ?? IntPtr.Zero;
             if (cw != IntPtr.Zero && (_chat!.PreTranslate(ref msg) || IsDialogMessage(cw, ref msg))) continue;
+            var nw = NetModelsWindow.Current?.Hwnd ?? IntPtr.Zero;
+            if (nw != IntPtr.Zero && (NetModelsWindow.Current!.PreTranslate(ref msg) || IsDialogMessage(nw, ref msg))) continue;
             TranslateMessage(ref msg);
             DispatchMessage(ref msg);
         }
     }
+
+    /// <summary>Longest selected text for the model: network models have a much longer context.</summary>
+    private int MaxChars => NetModels.IsNet(_settings.AiModel) ? Math.Max(_settings.AiMaxChars, 20000) : _settings.AiMaxChars;
 
     /// <summary>Run an action on the main thread.</summary>
     public void Invoke(Action a)
@@ -286,7 +291,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             case CMD_LOG: if (File.Exists(Log.FilePath)) Open("notepad.exe", Log.FilePath); break;
             case CMD_ABOUT:
                 MessageBox(_hwnd,
-                    L.T("about.text", _settings.HotkeyConvertLastWord, _settings.HotkeyConvertSelection, _settings.HotkeyAiFix, _settings.HotkeyTranslate),
+                    L.T("about.text", _settings.HotkeyConvertLastWord, _settings.HotkeyConvertSelection, _settings.HotkeyAiFix, _settings.HotkeyTranslate, _settings.HotkeyChat),
                     AppName, 0x40);
                 break;
             case CMD_EXIT:
@@ -312,6 +317,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     {
         _monitor.AutoSwitch = _settings.AutoSwitch;
         _monitor.SetExcludedApps(_settings.ExcludedApps);
+        _monitor.Editors.Enabled = _settings.SkipCodeEditors;
         _monitor.SetNeverSwitch(_settings.NeverSwitch);
         _monitor.SetPriority(_settings.EffectiveLayoutPriority);
         if (!first && _settingsWindow == null) RegisterHotkeys();
@@ -353,6 +359,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
 
     public Settings Settings => _settings;
     public bool Autostart => IsAutostart();
+
     public bool InstallRunning => _installCts != null;
 
     public string AiStatusText =>
@@ -460,6 +467,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         try { SetAutostart(autostart); } catch (Exception ex) { Log.Write("Autostart: " + ex.Message); }
         if (modelChanged && !InstallRunning) { _ai.Unload(); _loadedModelDir = null; }
         ApplySettings(first: false);
+        RefreshModelLists();   // the NVIDIA option changes what is "installed"
         if (langChanged)
         {
             // New interface language: recreate the windows
@@ -474,9 +482,17 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     }
 
     /// <summary>Model correction is enabled: load the model or (with consent) install everything needed.</summary>
-    private void EnsureAi()
+    /// <param name="onDecline">The user didn't agree to install: instead of turning the model off (choosing another
+    /// model in the assistant or chat - go back to the previous one).</param>
+    private void EnsureAi(Action? onDecline = null)
     {
         if (InstallRunning) return;
+        // The selected network model was deleted: back to the default local model
+        if (NetModels.IsNet(_settings.AiModel) && NetModels.Selected(_settings) == null)
+        {
+            _settings.AiModel = AiSetup.Catalog[0].Id;
+            _settings.Save();
+        }
         var dir = AiPlatform.InstalledKey(_settings);
         // The NVIDIA card was allowed after the model was installed: llama.cpp CUDA and the GGUF file are still missing
         bool nvidiaOnly = dir != null && AiPlatform.NvidiaMissing(_settings);
@@ -502,6 +518,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 _settings.Save();
                 return;
             }
+            if (onDecline != null) { onDecline(); return; }
             _settings.AiEnabled = false;
             _settings.Save();
             UpdateIcon();
@@ -569,6 +586,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 }
                 RegisterHotkeysIfIdle();
                 _settingsWindow?.SetAiChecked(_settings.AiEnabled);
+                RefreshModelLists();   // the model is now marked as installed
                 OnAiStatusChanged();
             });
         });
@@ -682,10 +700,10 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             Notify(AppName, L.T(task.Action == AiAction.Fix ? "note.select_fix" : "note.select_translate"));
             return;
         }
-        if (text.Length > _settings.AiMaxChars)
+        if (text.Length > MaxChars)
         {
             Input.RestoreIfUnchanged(prev, copySeq);
-            Notify(AppName, L.T("note.too_long", text.Length, _settings.AiMaxChars), true);
+            Notify(AppName, L.T("note.too_long", text.Length, MaxChars), true);
             return;
         }
 
@@ -788,9 +806,9 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             _assistant?.SetError(L.T("err.not_installed"));
             return;
         }
-        if (text.Length > _settings.AiMaxChars)
+        if (text.Length > MaxChars)
         {
-            _assistant?.SetError(L.T("err.too_long", text.Length, _settings.AiMaxChars));
+            _assistant?.SetError(L.T("err.too_long", text.Length, MaxChars));
             return;
         }
         var job = new AiJob(task, text, null, 0, _assistantSourceWnd, ToWindow: true);
@@ -832,7 +850,7 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
             return;
         }
         var last = history[^1].Content;
-        if (last.Length > _settings.AiMaxChars) { done(null, L.T("err.too_long", last.Length, _settings.AiMaxChars)); return; }
+        if (last.Length > MaxChars) { done(null, L.T("err.too_long", last.Length, MaxChars)); return; }
         var job = new AiJob(new AssistantTask(AiAction.Explain), last, null, 0, IntPtr.Zero, ToWindow: true,
             Work: ai => ai.Converse(history), Done: done);
         if (_ai.Status == AiCorrector.State.Ready) { Execute(job); return; }
@@ -842,6 +860,61 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     }
 
     public void ChatClosed() => _chat = null;
+
+    // ------------------------------------------------------------------ model choice in the windows, network models
+
+    public IReadOnlyList<(string Id, string Title)> ModelChoices => KeyboardSwitcher.ModelChoices.All(_settings);
+    public string CurrentModel => _settings.AiModel;
+
+    /// <summary>A model was chosen in the assistant or chat window: it becomes the model everywhere (as in settings).</summary>
+    public void SelectModel(string id)
+    {
+        if (id == _settings.AiModel) return;
+        if (AiBusy || InstallRunning)
+        {
+            // Not while the model is answering or installing: put the old choice back
+            RefreshModelLists();
+            Notify(AppName, L.T("note.model_busy"));
+            return;
+        }
+        var prev = _settings.AiModel;
+        Log.Write($"Model chosen in a window: {id}");
+        _settings.AiModel = id;
+        _settings.Save();
+        _ai.Unload();
+        _loadedModelDir = null;
+        RefreshModelLists();
+        OnAiStatusChanged();
+        if (!_settings.AiEnabled) return;
+        EnsureAi(onDecline: () =>
+        {
+            _settings.AiModel = prev;
+            _settings.Save();
+            RefreshModelLists();
+        });
+    }
+
+    /// <summary>The network models window saved its list.</summary>
+    public void SaveNetModels(List<NetModel> list)
+    {
+        _settings.NetModels = list;
+        bool deleted = NetModels.IsNet(_settings.AiModel) && NetModels.Selected(_settings) == null;
+        if (deleted) _settings.AiModel = AiSetup.Catalog[0].Id;
+        _settings.Save();
+        Log.Write($"Network models: {list.Count}");
+        // The selected connection changed (address, key, model) or was deleted: load it again on next use
+        var key = AiPlatform.InstalledKey(_settings);
+        if (deleted || (NetModels.IsNet(_settings.AiModel) && key != _loadedModelDir)) { _ai.Unload(); _loadedModelDir = null; }
+        RefreshModelLists();
+        OnAiStatusChanged();
+    }
+
+    private void RefreshModelLists()
+    {
+        _settingsWindow?.RefreshModels(_settings.AiModel);
+        _assistant?.RefreshModels();
+        _chat?.RefreshModels();
+    }
 
     public void Dispose()
     {

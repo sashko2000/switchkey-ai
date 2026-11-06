@@ -303,7 +303,8 @@ internal sealed class AiCorrector : IDisposable
             "You are a helpful assistant that runs locally on the user's computer. Answer in the language of the user's " +
             "last message. Be concise and accurate; if you are not sure, say so. Use plain text, no Markdown tables.";
         // Rough budget in characters: Cyrillic ~2-3 characters per token, the answer needs room too
-        int budget = Device.StartsWith("NPU (Ryzen", StringComparison.Ordinal) ? 3000
+        int budget = IsNetwork ? 60000
+                   : Device.StartsWith("NPU (Ryzen", StringComparison.Ordinal) ? 3000
                    : Device.StartsWith("NPU", StringComparison.Ordinal) ? 1800 : 10000;
         var kept = new List<ChatMessage>();
         int used = system.Length;
@@ -453,6 +454,9 @@ internal sealed class AiCorrector : IDisposable
     }
 
     /// <summary>Use an already loaded backend (tests: a fake backend or a model loaded on a specific device).</summary>
+    /// <summary>The loaded model is on a server (OpenAI, Claude, Gemini, Ollama...): long context, no NPU limits.</summary>
+    public bool IsNetwork => Volatile.Read(ref _backend) is NetBackend;
+
     internal void UseBackend(ILlmBackend backend, string modelName, string device)
     {
         Unload(wait: true);

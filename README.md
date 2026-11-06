@@ -4,7 +4,8 @@
 
 **KeyboardSwitcher** is a Windows tray app that fixes text typed in the wrong keyboard layout and, optionally,
 corrects, translates and rewrites selected text with a small language model running **locally** on the NPU, GPU or CPU
-(Intel OpenVINO, AMD Ryzen AI, llama.cpp; optionally an NVIDIA card). Typed text is never stored or sent anywhere.
+(Intel OpenVINO, AMD Ryzen AI, llama.cpp; optionally an NVIDIA card) - or, if you choose, with a network model
+(OpenAI, Claude, Gemini, Ollama). Typed text is never stored; text is sent only to a network model you selected.
 
 ![Settings window](docs/screenshots/settings.png)
 
@@ -24,6 +25,7 @@ The tray icon «Aя» appears next to the clock; settings are in its menu.
 | Translate the selected text between two languages from settings (Russian ↔ English by default) | **Ctrl+Alt+T** | yes |
 | Assistant: translate to English, Russian, Ukrainian, Slovak, Spanish or Hindi; fix, more polite, formal / casual, shorten, simplify, explain, reply | tray menu or Ctrl+Alt+T (window) | yes |
 | Chat with the model; the selected text goes into the message field. Chats are saved on this computer | **Ctrl+Alt+C** or tray menu | yes |
+| Choose the model right in the assistant and chat windows (the same model is then used everywhere) | model list at the top | - |
 
 | Tray menu | Assistant window |
 |---|---|
@@ -35,13 +37,36 @@ The tray icon «Aя» appears next to the clock; settings are in its menu.
 - **Technical words** (cmd, git, npm, exe, ssh and ~380 more) are recognized even though they are missing from everyday
   dictionaries. The list is in `src/KeyboardSwitcher/Resources/tech.txt` (one word per line; rebuild after editing).
 - Only the layouts installed in Windows are used.
+- **Code editors:** in the code editor of Visual Studio and VS Code (also Cursor, Windsurf) the layout is not changed
+  automatically; their other fields (search, Solution Explorer, chat, terminal) keep auto-correction. The focused element
+  is found with UI Automation (VS: `WpfTextView`, VS Code: Monaco `inputarea`); the log shows what was detected.
+  Turn off in *Settings → Not in the code editor*. Ctrl+Alt+Z still converts a word by hand.
 - **Chat:** history is kept in `%LOCALAPPDATA%\KeyboardSwitcher\chats` (one JSON file per chat; delete a chat in the window
   or the file). Long conversations are trimmed to the newest messages that fit the model's context (~1800 characters on
   the Intel NPU, ~10000 on GPU/CPU).
 
+## Network models: OpenAI, Claude, Gemini, Ollama
+
+*Settings → Network...* adds connections: provider, name, address, API key and model (*List* asks the server for its
+models, *Check* sends a test request). They appear in the model lists of settings, the assistant and the chat, marked
+"(network)".
+
+| Provider | Address (default) | API | Key |
+|---|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | Chat Completions | from platform.openai.com |
+| Claude (Anthropic) | `https://api.anthropic.com/v1` | Messages | from console.anthropic.com |
+| Gemini (Google) | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible | from Google AI Studio |
+| Ollama / OpenAI-compatible | `http://localhost:11434/v1` | Chat Completions | usually none (LM Studio, vLLM, llama-server... - change the address) |
+
+- With a network model, the **selected text and chat messages are sent to that provider** (Ollama on this computer
+  keeps them local). Layout auto-correction never uses a model. Pricing and data use are the provider's.
+- API keys are stored in `settings.json` encrypted with Windows DPAPI (only this Windows user can decrypt them).
+  A key is never sent over plain http to another computer.
+- Network models get longer texts (up to 20,000 characters) and longer chat history than local ones.
+
 ## Running the model on NPU → GPU → CPU
 
-Turn on **text correction by the model** in *Settings*. The app shows what it will download and how much, then installs
+Turn on **Use the model for selected text, the assistant and chat** in *Settings*. The app shows what it will download and how much, then installs
 everything into `%LOCALAPPDATA%\KeyboardSwitcher`. The model is loaded on first use and unloaded after 10 idle minutes
 (both configurable). *Run on* selects the device: **Automatic** (NPU → GPU → CPU) or a specific one; if it fails, the next
 one in the order is used. The settings window lists the devices found on this computer.
@@ -109,7 +134,7 @@ CPU 13 tokens/s, ~0.6 s.
 
 | Command | What it checks | Where it runs |
 |---|---|---|
-| `test.bat`, or **Test Explorer** in Visual Studio (`tests\KeyboardSwitcher.Tests`, MSTest) | layout detection (minimum accuracy per scenario, single-letter words, text conversion, preferred layout, Hindi) and model logic without a real model: prompts for all actions and languages, retries (untranslated text, transliteration), fallback for templates without a system role, text clean-up, device order NPU → GPU → CPU for Intel and AMD, NVIDIA (memory check, CUDA first, partial offload, GGUF header), GGUF-only models, installation plans, catalog and translations, the local server backend (fake server), chat (history trimming, saved chats) | anywhere, GitHub Actions |
+| `test.bat`, or **Test Explorer** in Visual Studio (`tests\KeyboardSwitcher.Tests`, MSTest) | layout detection (minimum accuracy per scenario, single-letter words, text conversion, preferred layout, Hindi) and model logic without a real model: prompts for all actions and languages, retries (untranslated text, transliteration), fallback for templates without a system role, text clean-up, device order NPU → GPU → CPU for Intel and AMD, NVIDIA (memory check, CUDA first, partial offload, GGUF header), GGUF-only models, installation plans, catalog and translations, the local server backend (fake server), chat (history trimming, saved chats), network models (requests and errors of each provider, fake HTTP) | anywhere, GitHub Actions |
 | `test_detector.bat` | detailed layout detection report with error examples (`-v`) | anywhere |
 | `tools\ModelTests\model_tests.bat` | every catalog model on every device of this computer (NPU, GPU, CPU, NVIDIA) with real requests: correction, translation to all 6 languages, every assistant action. Downloads missing models; writes `model_test_report.md` | a real Windows computer (Intel or AMD) |
 
@@ -142,8 +167,10 @@ By default all models except Qwen3.8-27B are tested (add it with `--models qwen3
 | File | Purpose |
 |---|---|
 | `KeyboardMonitor.cs` | keyboard hook, word tracking, replacement |
+| `CodeEditors.cs` | is the focus in a code editor (UI Automation) |
 | `LayoutDetector.cs`, `Layouts.cs` | layout detection: frequency dictionaries + trigram model, key tables |
-| `TrayApp.cs`, `SettingsWindow.cs`, `AssistantWindow.cs`, `ChatWindow.cs` | tray icon, menu, hotkeys, windows |
+| `TrayApp.cs`, `SettingsWindow.cs`, `AssistantWindow.cs`, `ChatWindow.cs`, `NetModelsWindow.cs` | tray icon, menu, hotkeys, windows |
+| `NetModels.cs` | network models: OpenAI / Anthropic / Gemini / Ollama requests, encrypted keys, model lists |
 | `ChatStore.cs` | saved chats |
 | `AiCorrector.cs` | prompts for correction, translation and rewriting |
 | `AiPlatform.cs` | engine choice by processor vendor, NPU → GPU → CPU order |

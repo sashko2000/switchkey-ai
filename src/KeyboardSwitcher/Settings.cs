@@ -48,7 +48,7 @@ public sealed class Settings
     /// <summary>Enable text correction by the model (turned on in the settings window, which also installs everything needed).</summary>
     public bool AiEnabled { get; set; } = false;
 
-    /// <summary>Model from the catalog (see AiSetup.Catalog).</summary>
+    /// <summary>Model from the catalog (see AiSetup.Catalog), or "net:&lt;id&gt;" - a network model from NetModels.</summary>
     public string AiModel { get; set; } = "qwen3-8b";
 
     /// <summary>Advanced: a custom OpenVINO model folder. Empty - model from the catalog.</summary>
@@ -69,8 +69,17 @@ public sealed class Settings
     /// <summary>Devices in priority order: NPU, GPU (GPU.0 - first graphics adapter), CPU.</summary>
     public List<string> AiDevices { get; set; } = new() { "NPU", "GPU.0", "CPU" };
 
+    /// <summary>Network models (OpenAI, Claude, Gemini, Ollama...). API keys are encrypted for this Windows user.</summary>
+    public List<NetModel> NetModels { get; set; } = new();
+
     /// <summary>Maximum length of selected text for model correction (characters).</summary>
     public int AiMaxChars { get; set; } = 1500;
+
+    /// <summary>
+    /// No auto-correction where code is written: the code editor of Visual Studio and VS Code (their search boxes,
+    /// Solution Explorer, chat etc. keep it).
+    /// </summary>
+    public bool SkipCodeEditors { get; set; } = true;
 
     /// <summary>Apps in which auto-switching is disabled (exe file name).</summary>
     public List<string> ExcludedApps { get; set; } = new()
