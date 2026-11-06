@@ -70,6 +70,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         AddTrayIcon();
         RegisterHotkeys();
         ApplySettings(first: true);
+        SyncElevationTask();
+        if (_settings.RunElevated && !Elevation.IsElevated) Notify(AppName, L.T("note.not_elevated"), true);
         SetTimer(_hwnd, (UIntPtr)IdleTimerId, 30_000, IntPtr.Zero); // model idle check
 
         while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
@@ -296,14 +298,19 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                     AppName, 0x40);
                 break;
             case CMD_EXIT:
-                _installCts?.Cancel();
-                KillTimer(_hwnd, (UIntPtr)IdleTimerId);
-                _assistant?.Close();
-                _chat?.Close();
-                _settingsWindow?.Close();
-                DestroyWindow(_hwnd);
+                Quit();
                 break;
         }
+    }
+
+    private void Quit()
+    {
+        _installCts?.Cancel();
+        KillTimer(_hwnd, (UIntPtr)IdleTimerId);
+        _assistant?.Close();
+        _chat?.Close();
+        _settingsWindow?.Close();
+        DestroyWindow(_hwnd);
     }
 
     private static void Open(string exe, string arg)
@@ -463,9 +470,12 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         bool modelChanged = s.AiModel != _settings.AiModel || s.AiNvidia != _settings.AiNvidia
                             || !string.Equals(s.AiDevice, _settings.AiDevice, StringComparison.OrdinalIgnoreCase);
         bool langChanged = s.UiLanguage != _settings.UiLanguage;
+        bool wasElevated = _settings.RunElevated;
         _settings = s;
         _settings.Save();
-        try { SetAutostart(autostart); } catch (Exception ex) { Log.Write("Autostart: " + ex.Message); }
+        if (s.RunElevated == wasElevated)
+            try { SetAutostart(autostart); } catch (Exception ex) { Log.Write("Autostart: " + ex.Message); }
+        if (!ApplyElevation(wasElevated, s, autostart)) return true;
         if (modelChanged && !InstallRunning) { _ai.Unload(); _loadedModelDir = null; }
         ApplySettings(first: false);
         RefreshModelLists();   // the NVIDIA option changes what is "installed"
@@ -635,17 +645,86 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         }
     }
 
-    private static bool IsAutostart()
+    /// <summary>Autostart: the registry Run entry, or - with admin rights - the Task Scheduler task at sign-in.</summary>
+    private bool IsAutostart()
     {
         using var k = Registry.CurrentUser.OpenSubKey(RunKey);
-        return k?.GetValue(AppName) is string;
+        return k?.GetValue(AppName) is string || (_settings.RunElevated && Elevation.TaskAtLogon());
     }
 
-    private static void SetAutostart(bool on)
+    private void SetAutostart(bool on)
     {
+        if (_settings.RunElevated && Elevation.IsElevated)
+        {
+            // The task starts the app at sign-in with admin rights (the Run entry would start a second copy without them)
+            Elevation.CreateTask(atLogon: on);
+            RemoveAutostartEntry();
+            return;
+        }
         using var k = Registry.CurrentUser.CreateSubKey(RunKey);
         if (on) k.SetValue(AppName, $"\"{Environment.ProcessPath}\"");
         else k.DeleteValue(AppName, false);
+    }
+
+    internal static void RemoveAutostartEntry()
+    {
+        try { using var k = Registry.CurrentUser.CreateSubKey(RunKey); k.DeleteValue(AppName, false); }
+        catch (Exception ex) { Log.Write("Autostart entry: " + ex.Message); }
+    }
+
+    /// <summary>
+    /// At start with admin rights: keep the task up to date (the exe may have moved) and move autostart into it.
+    /// </summary>
+    private void SyncElevationTask()
+    {
+        if (!_settings.RunElevated || !Elevation.IsElevated) return;
+        using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
+        {
+            bool atLogon = k?.GetValue(AppName) is string || Elevation.TaskAtLogon();
+            if (Elevation.CreateTask(atLogon)) RemoveAutostartEntry();
+        }
+    }
+
+    /// <summary>The "programs run as administrator" option was changed in settings.</summary>
+    /// <returns>false - the app restarts (the caller must not continue).</returns>
+    private bool ApplyElevation(bool wasOn, Settings s, bool autostart)
+    {
+        if (s.RunElevated == wasOn) return true;
+        var owner = _settingsWindow?.Hwnd ?? _hwnd;
+        if (s.RunElevated)
+        {
+            if (Elevation.IsElevated) { Elevation.CreateTask(autostart); RemoveAutostartEntry(); return true; }
+            // Autostart as chosen now: the elevated copy moves it into the task
+            using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
+                if (autostart) k.SetValue(AppName, $"\"{Environment.ProcessPath}\""); else k.DeleteValue(AppName, false);
+            if (MessageBox(owner, L.T("msg.elevate_restart"), AppName, 0x21 /* OK/Cancel, question */) != 1)
+            {
+                s.RunElevated = false;
+                s.Save();
+                return true;
+            }
+            if (Elevation.RestartElevated())
+            {
+                Quit();   // the elevated copy takes over (it waits until this one has closed)
+                return false;
+            }
+            s.RunElevated = false;
+            s.Save();
+            MessageBox(owner, L.T("msg.elevate_declined"), AppName, 0x30);
+            return true;
+        }
+        // Turned off: delete the task, autostart back to the registry, restart without admin rights
+        Elevation.DeleteTask();
+        using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
+            if (autostart) k.SetValue(AppName, $"\"{Environment.ProcessPath}\"");
+        if (Elevation.IsElevated)
+        {
+            MessageBox(owner, L.T("msg.unelevate_restart"), AppName, 0x40);
+            Elevation.RestartNormal();
+            Quit();
+            return false;
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ hotkeys

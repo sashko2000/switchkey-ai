@@ -81,6 +81,12 @@ public sealed class Settings
     /// </summary>
     public bool SkipCodeEditors { get; set; } = true;
 
+    /// <summary>
+    /// Run with administrator rights, so that auto-correction also works in programs run as administrator. Started by
+    /// a Task Scheduler task (no UAC prompt each time); turning it off deletes the task.
+    /// </summary>
+    public bool RunElevated { get; set; } = false;
+
     /// <summary>Apps in which auto-switching is disabled (exe file name).</summary>
     public List<string> ExcludedApps { get; set; } = new()
     {

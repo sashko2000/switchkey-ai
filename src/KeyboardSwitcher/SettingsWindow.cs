@@ -18,7 +18,7 @@ internal sealed class SettingsWindow
     }
 
     private const int ID_OK = 1, ID_CANCEL = 2, ID_APPLY = 1040,
-        ID_AUTO = 1001, ID_AUTOSTART = 1002,
+        ID_AUTO = 1001, ID_AUTOSTART = 1002, ID_ELEVATED = 1003,
         ID_HK_LAST = 1010, ID_HK_SEL = 1011, ID_HK_AI = 1012, ID_HK_LAST_DEF = 1013, ID_HK_SEL_DEF = 1014, ID_HK_AI_DEF = 1015,
         ID_HK_LAST_OFF = 1016, ID_HK_SEL_OFF = 1017, ID_HK_AI_OFF = 1018,
         ID_APP_COMBO = 1020, ID_APP_ADD = 1021, ID_APP_LIST = 1022, ID_APP_REMOVE = 1023,
@@ -140,17 +140,18 @@ internal sealed class SettingsWindow
     private void BuildControls()
     {
         // ---------- left column: general and layout
-        Ctl(ID_AUTO, "BUTTON", L.T("sw.auto"), BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, 16, 12, 396, 22);
-        Ctl(ID_AUTOSTART, "BUTTON", L.T("sw.autostart"), BS_AUTOCHECKBOX | WS_TABSTOP, 16, 36, 396, 22);
-        Label(L.T("sw.ui_lang"), 16, 70, 150);
-        var ul = Ctl(ID_UI_LANG, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 170, 66, 240, 200);
+        Ctl(ID_AUTO, "BUTTON", L.T("sw.auto"), BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, 16, 8, 396, 22);
+        Ctl(ID_AUTOSTART, "BUTTON", L.T("sw.autostart"), BS_AUTOCHECKBOX | WS_TABSTOP, 16, 30, 396, 22);
+        Ctl(ID_ELEVATED, "BUTTON", L.T("sw.elevated"), BS_AUTOCHECKBOX | WS_TABSTOP, 16, 52, 396, 22);
+        Label(L.T("sw.ui_lang"), 16, 82, 150);
+        var ul = Ctl(ID_UI_LANG, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 170, 78, 240, 200);
         foreach (var l in Languages.All) SendMessage(ul, CB_ADDSTRING, IntPtr.Zero, l.NativeName);
-        Label(L.T("sw.layout_prio"), 16, 100, 150);
-        var lp = Ctl(ID_LAYOUT_PRIO, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 170, 96, 240, 200);
+        Label(L.T("sw.layout_prio"), 16, 109, 150);
+        var lp = Ctl(ID_LAYOUT_PRIO, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 170, 105, 240, 200);
         SendMessage(lp, CB_ADDSTRING, IntPtr.Zero, L.T("sw.layout_auto"));
         foreach (var c in PriorityCodes.Skip(1)) SendMessage(lp, CB_ADDSTRING, IntPtr.Zero, Languages.Get(c).NativeName);
 
-        Ctl(0, "BUTTON", L.T("sw.hotkeys"), BS_GROUPBOX, 8, 130, 408, 188);
+        Ctl(0, "BUTTON", L.T("sw.hotkeys"), BS_GROUPBOX, 8, 134, 408, 188);
         void HotkeyRow(int y, string text, int id, int defId, int offId)
         {
             Label(text, 20, y + 3, 124);
@@ -160,19 +161,19 @@ internal sealed class SettingsWindow
             Ctl(defId, "BUTTON", L.T("sw.default"), BS_PUSHBUTTON | WS_TABSTOP, 292, y, 66, 24);
             Ctl(offId, "BUTTON", L.T("sw.off"), BS_PUSHBUTTON | WS_TABSTOP, 362, y, 48, 24);
         }
-        HotkeyRow(154, L.T("sw.hk.last"), ID_HK_LAST, ID_HK_LAST_DEF, ID_HK_LAST_OFF);
-        HotkeyRow(186, L.T("sw.hk.sel"), ID_HK_SEL, ID_HK_SEL_DEF, ID_HK_SEL_OFF);
-        HotkeyRow(218, L.T("sw.hk.ai"), ID_HK_AI, ID_HK_AI_DEF, ID_HK_AI_OFF);
-        HotkeyRow(250, L.T("sw.hk.tr"), ID_HK_TR, ID_HK_TR_DEF, ID_HK_TR_OFF);
-        HotkeyRow(282, L.T("sw.hk.chat"), ID_HK_CHAT, ID_HK_CHAT_DEF, ID_HK_CHAT_OFF);
+        HotkeyRow(158, L.T("sw.hk.last"), ID_HK_LAST, ID_HK_LAST_DEF, ID_HK_LAST_OFF);
+        HotkeyRow(190, L.T("sw.hk.sel"), ID_HK_SEL, ID_HK_SEL_DEF, ID_HK_SEL_OFF);
+        HotkeyRow(222, L.T("sw.hk.ai"), ID_HK_AI, ID_HK_AI_DEF, ID_HK_AI_OFF);
+        HotkeyRow(254, L.T("sw.hk.tr"), ID_HK_TR, ID_HK_TR_DEF, ID_HK_TR_OFF);
+        HotkeyRow(286, L.T("sw.hk.chat"), ID_HK_CHAT, ID_HK_CHAT_DEF, ID_HK_CHAT_OFF);
 
-        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 328, 408, 178);
-        Ctl(ID_APP_COMBO, "COMBOBOX", "", CBS_DROPDOWN | CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_TABSTOP, 20, 352, 250, 220);
-        Ctl(ID_APP_ADD, "BUTTON", L.T("sw.add"), BS_PUSHBUTTON | WS_TABSTOP, 278, 351, 126, 26);
-        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 384, 250, 82, WS_EX_CLIENTEDGE);
-        Ctl(ID_APP_REMOVE, "BUTTON", L.T("sw.remove"), BS_PUSHBUTTON | WS_TABSTOP, 278, 384, 126, 26);
-        Label(L.T("sw.excl_hint"), 278, 416, 126, 50);
-        Ctl(ID_CODE, "BUTTON", L.T("sw.code_editors"), BS_AUTOCHECKBOX | WS_TABSTOP, 20, 472, 388, 24);
+        Ctl(0, "BUTTON", L.T("sw.excl"), BS_GROUPBOX, 8, 330, 408, 180);
+        Ctl(ID_APP_COMBO, "COMBOBOX", "", CBS_DROPDOWN | CBS_AUTOHSCROLL | CBS_SORT | WS_VSCROLL | WS_TABSTOP, 20, 354, 250, 220);
+        Ctl(ID_APP_ADD, "BUTTON", L.T("sw.add"), BS_PUSHBUTTON | WS_TABSTOP, 278, 353, 126, 26);
+        Ctl(ID_APP_LIST, "LISTBOX", "", LBS_NOTIFY | LBS_SORT | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP, 20, 386, 250, 82, WS_EX_CLIENTEDGE);
+        Ctl(ID_APP_REMOVE, "BUTTON", L.T("sw.remove"), BS_PUSHBUTTON | WS_TABSTOP, 278, 386, 126, 26);
+        Label(L.T("sw.excl_hint"), 278, 418, 126, 50);
+        Ctl(ID_CODE, "BUTTON", L.T("sw.code_editors"), BS_AUTOCHECKBOX | WS_TABSTOP, 20, 476, 388, 24);
 
         // ---------- right column: model
         Ctl(0, "BUTTON", L.T("sw.ai_group"), BS_GROUPBOX, 428, 6, 404, 500);
@@ -226,6 +227,7 @@ internal sealed class SettingsWindow
     {
         SetCheck(ID_AUTO, s.AutoSwitch);
         SetCheck(ID_AUTOSTART, autostart);
+        SetCheck(ID_ELEVATED, s.RunElevated);
         SetHotkey(ID_HK_LAST, s.HotkeyConvertLastWord);
         SetHotkey(ID_HK_SEL, s.HotkeyConvertSelection);
         SetHotkey(ID_HK_AI, s.HotkeyAiFix);
@@ -275,6 +277,7 @@ internal sealed class SettingsWindow
             AiLoadOnDemand = GetCheck(ID_ON_DEMAND),
             AiNvidia = GetCheck(ID_NVIDIA),
             SkipCodeEditors = GetCheck(ID_CODE),
+            RunElevated = GetCheck(ID_ELEVATED),
             AiEnabled = GetCheck(ID_AI),
             AiModel = SelectedChoice(),
             NetModels = src.NetModels,

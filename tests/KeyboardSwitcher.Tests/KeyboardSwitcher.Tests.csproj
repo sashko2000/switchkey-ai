@@ -34,6 +34,7 @@
     <Compile Include="..\..\src\KeyboardSwitcher\NvidiaSupport.cs" Link="App\NvidiaSupport.cs" />
     <Compile Include="..\..\src\KeyboardSwitcher\NetModels.cs" Link="App\NetModels.cs" />
     <Compile Include="..\..\src\KeyboardSwitcher\CodeEditors.cs" Link="App\CodeEditors.cs" />
+    <Compile Include="..\..\src\KeyboardSwitcher\Elevation.cs" Link="App\Elevation.cs" />
     <EmbeddedResource Include="..\..\src\KeyboardSwitcher\Resources\Strings.tsv" LogicalName="KeyboardSwitcher.Resources.Strings.tsv" />
     <None Include="..\..\src\KeyboardSwitcher\Resources\*.txt" Link="Resources\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

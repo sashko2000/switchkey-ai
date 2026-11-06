@@ -68,6 +68,11 @@ and Hindi (the Windows language by default).
   *Settings → Not in the code editor* turns it off.
 - **Excluded programs:** password managers and remote desktop are excluded by default; add more in *Settings*.
 - Undoing a fix with Ctrl+Alt+Z remembers the word, so it is not fixed again.
+- **Programs run as administrator** (e.g. Visual Studio started "as administrator"): Windows doesn't pass their
+  keystrokes to normal programs. Turn on *Also work in programs run as administrator*: KeyboardSwitcher restarts with
+  admin rights (one UAC prompt) and creates the Task Scheduler task "KeyboardSwitcher (administrator)", which starts
+  it elevated without prompts (at sign-in, if autostart is on). Turning the option off deletes the task and restarts
+  the app without admin rights. Note: with this option, llama.cpp and the other model engines also run elevated.
 
 ## Language model
 
@@ -174,7 +179,8 @@ them local); its pricing and data policy apply.
 | Chats | `%LOCALAPPDATA%\KeyboardSwitcher\chats` |
 | Engines and models | `%LOCALAPPDATA%\KeyboardSwitcher` |
 
-To remove everything, exit the app and delete these folders.
+To remove everything: run `KeyboardSwitcher.exe --uninstall` (deletes the Task Scheduler task and the autostart entry;
+Windows may ask for confirmation), then delete these folders.
 
 ## Limitations
 
@@ -182,7 +188,7 @@ To remove everything, exit the app and delete these folders.
   (AltGr+г) and the Hindi compound signs on the digit row (क्ष, त्र, ज्ञ) are not handled.
 - Hindi: InScript only. Phonetic input and Hindi in Latin letters are left alone. The Hindi dictionary is small
   (~20k words), so short words that coincide with English ones (`Eh` = `आप`) are fixed only after a Hindi word.
-- Doesn't work in windows of programs running as administrator (a Windows limitation).
+- Programs run as administrator need the option *Also work in programs run as administrator* (see above).
 - The app is unsigned and uses a keyboard hook: an antivirus or SmartScreen may warn.
 - **Smart App Control** (Windows 11) blocks unsigned programs such as llama.cpp and ryzenai-server ("Bad Image",
   0xC0E90002). When it is on, AMD computers use OpenVINO on the CPU, and the GGUF-only models and the NVIDIA card are
@@ -225,6 +231,7 @@ To remove everything, exit the app and delete these folders.
 | `AmdSupport.cs`, `NvidiaSupport.cs` | AMD detection and llama.cpp engines; NVIDIA cards, CUDA, GGUF header |
 | `NetModels.cs` | network models: OpenAI / Anthropic / Gemini / Ollama, encrypted keys |
 | `AiSetup.cs` | model catalog, downloads and installation |
+| `Elevation.cs` | admin rights, the Task Scheduler task, `--uninstall` |
 | `ChatStore.cs` | saved chats |
 | `Loc.cs`, `Resources/Strings.tsv` | interface translations |
 
