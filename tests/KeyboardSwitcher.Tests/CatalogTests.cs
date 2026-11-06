@@ -49,7 +49,9 @@ public class CatalogTests
         {
             Assert.AreEqual(4.75, AiPlatform.DownloadGb(AiSetup.FindModelInfo("qwen3-8b")), 0.01, "OpenVINO version");
             Assert.AreEqual(5.68, AiPlatform.DownloadGb(AiSetup.FindModelInfo("qwen3.5-9b")), 0.01, "GGUF only");
-            Assert.AreEqual("Qwen3.5-9B (new) - 5.7 GB", L.T("sw.model_item", AiSetup.FindModelInfo("qwen3.5-9b").Title, 5.68));
+            // The number is formatted with the Windows regional settings ("5,7" in Ukraine)
+            var num = 5.68.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture);
+            Assert.AreEqual($"Qwen3.5-9B (new) - {num} GB", L.T("sw.model_item", AiSetup.FindModelInfo("qwen3.5-9b").Title, 5.68));
             Environment.SetEnvironmentVariable("KEYBOARDSWITCHER_FORCE_VENDOR", "amd");
             if (AiPlatform.Amd) Assert.AreEqual(5.03, AiPlatform.DownloadGb(AiSetup.FindModelInfo("qwen3-8b")), 0.01, "GGUF on AMD");
         }

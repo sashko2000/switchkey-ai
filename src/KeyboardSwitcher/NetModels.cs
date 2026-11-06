@@ -63,7 +63,8 @@ internal static class NetModels
         HttpResponseMessage r;
         try { r = await http.GetAsync(NetBackend.Url(n, "models"), ct).ConfigureAwait(false); }
         catch (HttpRequestException ex) { throw new NetModelException(L.T("err.net_unreachable", NetBackend.Url(n, "models"), ex.Message)); }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { throw new NetModelException(L.T("err.net_timeout", Find(n.Provider).Title)); }
+        catch (TaskCanceledException) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }
+        catch (TaskCanceledException) { throw new NetModelException(L.T("err.net_timeout", Find(n.Provider).Title)); }
         using var _ = r;
         var text = await r.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!r.IsSuccessStatusCode) throw NetBackend.Error(n, r.StatusCode, text);

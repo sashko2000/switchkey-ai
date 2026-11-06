@@ -10,7 +10,13 @@ public class NvidiaTests
     private const long GB = 1L << 30;
 
     [TestInitialize]
-    public void Init() => TestEnv.NewHome();   // nothing installed
+    public void Init()
+    {
+        TestEnv.NewHome();   // nothing installed
+        // No NVIDIA card unless a test sets one: the real card of the test computer must not change the results
+        // (a Blackwell card switches the CUDA build and its folder)
+        Nvidia.Override = () => new();
+    }
 
     [TestCleanup]
     public void Cleanup()
@@ -122,8 +128,8 @@ public class NvidiaTests
         Environment.SetEnvironmentVariable("KEYBOARDSWITCHER_FORCE_VENDOR", "intel");
         var s = new Settings { AiModel = "qwen3.5-9b", AiNvidia = true, AiDevice = "auto" };
         var m = AiSetup.FindModelInfo(s.AiModel);
+        Card(freeGb: 7);     // first the card: it decides the CUDA build that FakeInstall fills
         FakeInstall(m);
-        Card(freeGb: 7);
         Assert.IsTrue(AiPlatform.Installed(s));
         Assert.IsFalse(AiPlatform.NvidiaMissing(s));
         var left = AiPlatform.Plan(s).steps.Where(x => !x.Contains("Visual C++")).ToList();
@@ -138,8 +144,8 @@ public class NvidiaTests
     {
         Environment.SetEnvironmentVariable("KEYBOARDSWITCHER_FORCE_VENDOR", "intel");
         var s = new Settings { AiModel = "gemma-4-12b", AiNvidia = true };
-        FakeInstall(AiSetup.FindModelInfo(s.AiModel));
         Card(freeGb: 7);   // needs ~8.3 GB
+        FakeInstall(AiSetup.FindModelInfo(s.AiModel));
         var cands = AiPlatform.Candidates(s).Select(c => c.Device).ToList();
         Assert.IsFalse(cands.Any(c => c.Contains("CUDA")), string.Join(",", cands));
         Assert.AreEqual("CPU", string.Join(",", cands));
@@ -279,9 +285,9 @@ public class NvidiaTests
         Environment.SetEnvironmentVariable("KEYBOARDSWITCHER_FORCE_VENDOR", "intel");
         var s = new Settings { AiModel = "qwen3.5-9b", AiNvidia = true };
         var m = AiSetup.FindModelInfo(s.AiModel);
+        Card(freeGb: 6, totalGb: 6);
         FakeInstall(m);
         WriteGguf(AmdEngines.GgufPath(m), "qwen35", 32, 160_000_000, m.GgufBytes);
-        Card(freeGb: 6, totalGb: 6);
         var cands = AiPlatform.Candidates(s).Select(c => c.Device).ToList();
         StringAssert.StartsWith(cands[0], "GPU (NVIDIA GeForce RTX 4060 Laptop GPU, CUDA 12.4, ");
         StringAssert.Contains(cands[0], " of 32 layers)");
