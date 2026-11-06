@@ -135,6 +135,7 @@ internal static unsafe class Native
     // ---------- kernel32 ----------
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandle(string? name);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode);
     [DllImport("kernel32.dll")] public static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
     [DllImport("kernel32.dll")] public static extern IntPtr GlobalLock(IntPtr h);
     [DllImport("kernel32.dll")] public static extern bool GlobalUnlock(IntPtr h);

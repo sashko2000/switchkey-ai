@@ -19,9 +19,14 @@ internal static class Program
             Native.MessageBox(IntPtr.Zero, L.T("msg.fatal", (e.ExceptionObject as Exception)?.Message, Log.FilePath), "KeyboardSwitcher", 0x10);
         };
 
+        // No system error boxes ("Bad Image", missing DLL) - also for child processes, which inherit this mode;
+        // such errors are reported in the app's status and log instead
+        Native.SetErrorMode(0x0001 /* SEM_FAILCRITICALERRORS */ | 0x0002 /* SEM_NOGPFAULTERRORBOX */ | 0x8000 /* SEM_NOOPENFILEERRORBOX */);
+
         try
         {
             Log.Write("Starting " + typeof(Program).Assembly.GetName().Version);
+            if (Hardware.IsAmdCpu) Log.Write("AMD processor; Smart App Control: " + Hardware.SmartAppControlState);
             AiSetup.RegisterNativeResolver();
             var settings = Settings.Load();
             L.SetLanguage(settings.UiLanguage);

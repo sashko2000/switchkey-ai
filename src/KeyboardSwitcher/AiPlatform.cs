@@ -17,7 +17,14 @@ internal sealed record LoadCandidate(string Device, Func<ILlmBackend> Create);
 /// </summary>
 internal static class AiPlatform
 {
-    public static bool Amd => Hardware.IsAmdCpu;
+    /// <summary>
+    /// Use the AMD engines (llama.cpp, ryzenai-server). Not when Smart App Control is on: Windows blocks these unsigned
+    /// programs, so AMD computers then use OpenVINO (signed by Intel) on the CPU, like the Intel path.
+    /// </summary>
+    public static bool Amd => Hardware.IsAmdCpu && !Hardware.SmartAppControlOn;
+
+    /// <summary>AMD processor, but Smart App Control forces the OpenVINO CPU path.</summary>
+    public static bool AmdBlockedBySac => Hardware.IsAmdCpu && Hardware.SmartAppControlOn;
 
     private static readonly string[] Kinds = { "NPU", "GPU", "CPU" };
 

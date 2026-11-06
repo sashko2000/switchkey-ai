@@ -41,6 +41,37 @@ internal static class Hardware
         }
     }
 
+    /// <summary>Smart App Control: "on", "evaluation", "off" or "" (unknown / older Windows).</summary>
+    public static string SmartAppControlState
+    {
+        get
+        {
+            try
+            {
+                var v = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CI\Policy", "VerifiedAndReputablePolicyState", null);
+                return v is int i ? i switch { 0 => "off", 1 => "on", 2 => "evaluation", _ => i.ToString() } : "";
+            }
+            catch { return ""; }
+        }
+    }
+
+    /// <summary>
+    /// Smart App Control is on: Windows refuses unsigned programs and libraries such as llama.cpp and ryzenai-server
+    /// (error 0xC0E90002, "Bad Image"). OpenVINO is signed by Intel and still works.
+    /// </summary>
+    public static bool SmartAppControlOn => SmartAppControlState == "on" || File.Exists(BlockedMarker);
+
+    /// <summary>Set when Windows refused to start llama.cpp / ryzenai-server (0xC0E90002) even though Smart App Control
+    /// does not look "on" (e.g. App Control for Business): from then on the signed OpenVINO path is used.</summary>
+    private static string BlockedMarker => Path.Combine(AiSetup.BaseDir, "unsigned-blocked.txt");
+
+    public static void MarkUnsignedBlocked()
+    {
+        try { Directory.CreateDirectory(AiSetup.BaseDir); File.WriteAllText(BlockedMarker, DateTime.Now.ToString("s")); }
+        catch { }
+        Log.Write("Windows blocked an unsigned engine (0xC0E90002); switching to OpenVINO");
+    }
+
     public enum NpuKind { None, Xdna1, Xdna2 }
 
     /// <summary>AMD NPU: XDNA 2 (Ryzen AI 300/400, PCI device 17F0) runs language models, XDNA 1 (1502) does not.</summary>

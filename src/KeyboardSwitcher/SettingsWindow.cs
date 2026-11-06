@@ -292,6 +292,7 @@ internal sealed class SettingsWindow
         var text = L.T("sw.dev.found", string.Join("; ", found.Select(d => $"{d.Label} - {d.Name}" + (d.Note != null ? $" ({d.Note})" : ""))));
         var choice = SelectedDevice();
         if (choice != "auto" && !found.Any(d => d.Kind == choice && d.Usable)) text += " " + L.T("sw.dev.not_found", choice);
+        if (AiPlatform.AmdBlockedBySac) text += " " + L.T("sw.dev.sac");
         SetWindowText(h, text);
     }
 

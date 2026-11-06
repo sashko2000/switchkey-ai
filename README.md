@@ -94,7 +94,10 @@ CPU 13 tokens/s, ~0.6 s.
 - Doesn't work in windows of apps running as administrator (a Windows limitation).
 - An unsigned app with a keyboard hook may trigger an antivirus or SmartScreen warning.
 - Model correction: up to 1500 characters at a time; the first NPU load takes ~30 s, later loads are faster (cache).
-- The AMD path has not been tested on real AMD hardware yet.
+- **Smart App Control** (Windows 11) blocks unsigned programs such as llama.cpp and ryzenai-server ("Bad Image",
+  0xC0E90002). When it is on, AMD computers use OpenVINO (signed by Intel) on the CPU instead. The app itself is unsigned
+  too, so Smart App Control may also block `KeyboardSwitcher.exe` downloaded from Releases.
+- The AMD GPU/NPU path has not been fully tested on real AMD hardware yet.
 
 ## Project structure
 

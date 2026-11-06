@@ -107,7 +107,15 @@ internal sealed class ServerBackend : ILlmBackend
             if (_process.HasExited)
             {
                 var why = LastLines();
+                uint code = unchecked((uint)_process.ExitCode);
                 Dispose();
+                // 0xC0E90002: Windows code integrity (Smart App Control / App Control) refused to load an unsigned file
+                if (code == 0xC0E90002)
+                {
+                    Hardware.MarkUnsignedBlocked();
+                    throw new InvalidOperationException(L.T("err.blocked_by_windows", Path.GetFileName(exe)));
+                }
+                if (why.Length == 0) why = $"0x{code:X8}";
                 throw new InvalidOperationException(L.T("err.server_exited", Path.GetFileName(exe), why));
             }
             try
