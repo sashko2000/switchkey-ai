@@ -164,6 +164,7 @@ internal static class Hardware
 /// <summary>
 /// Engines for AMD processors: llama.cpp (llama-server, Vulkan) for the Radeon GPU and the CPU,
 /// ryzenai-server (AMD Ryzen AI) for the XDNA 2 NPU. Both are local OpenAI-compatible servers.
+/// llama.cpp (Vulkan) also runs the GGUF-only models on Intel computers (Arc GPU and CPU).
 /// </summary>
 internal static class AmdEngines
 {
@@ -253,10 +254,19 @@ internal static class AmdEngines
         return _vulkan = list;
     }
 
-    /// <summary>GPU for the model: AMD Radeon first, then any other (NVIDIA, Intel).</summary>
-    public static VulkanDevice? PickGpu(List<VulkanDevice> list) =>
-        list.FirstOrDefault(d => d.Name.Contains("AMD", StringComparison.OrdinalIgnoreCase) || d.Name.Contains("Radeon", StringComparison.OrdinalIgnoreCase))
-        ?? list.FirstOrDefault();
+    /// <summary>
+    /// GPU for the model via Vulkan: AMD Radeon first, then Intel (Arc), then any other except NVIDIA - an NVIDIA card is
+    /// used only through CUDA and only when the user turned it on (see <see cref="Nvidia"/>).
+    /// </summary>
+    public static VulkanDevice? PickGpu(List<VulkanDevice> list)
+    {
+        static bool Has(VulkanDevice d, string s) => d.Name.Contains(s, StringComparison.OrdinalIgnoreCase);
+        var usable = list.Where(d => !Has(d, "NVIDIA") && !Has(d, "GeForce") && !Has(d, "Quadro")
+                                     && !Has(d, "llvmpipe") && !Has(d, "Microsoft Basic")).ToList();
+        return usable.FirstOrDefault(d => Has(d, "AMD") || Has(d, "Radeon"))
+               ?? usable.FirstOrDefault(d => Has(d, "Intel"))
+               ?? usable.FirstOrDefault();
+    }
 
     // ------------------------------------------------------------------ starting servers
 
@@ -326,7 +336,7 @@ internal static class AmdEngines
     }
 
     /// <summary>Unpack the archive; the folder with <paramref name="exeName"/> becomes the target folder.</summary>
-    private static async Task UnpackAsync(string zip, string target, string exeName, CancellationToken ct)
+    internal static async Task UnpackAsync(string zip, string target, string exeName, CancellationToken ct)
     {
         var tmp = target + ".tmp";
         if (Directory.Exists(tmp)) Directory.Delete(tmp, true);

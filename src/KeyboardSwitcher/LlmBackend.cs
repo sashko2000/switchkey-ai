@@ -90,7 +90,9 @@ internal sealed class ServerBackend : ILlmBackend
     /// <param name="arguments">Command line; {port} is replaced with a free port.</param>
     /// <param name="apiKey">Passed as a Bearer token if the server was started with one.</param>
     /// <param name="thinkingKwargs">Send chat_template_kwargs.enable_thinking (llama-server with --jinja).</param>
-    public ServerBackend(string exe, string arguments, string? apiKey, bool thinkingKwargs, TimeSpan startTimeout)
+    /// <param name="environment">Extra environment variables for the server process.</param>
+    public ServerBackend(string exe, string arguments, string? apiKey, bool thinkingKwargs, TimeSpan startTimeout,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         int port = FreePort();
         _base = $"http://127.0.0.1:{port}";
@@ -107,6 +109,7 @@ internal sealed class ServerBackend : ILlmBackend
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        if (environment != null) foreach (var (k, v) in environment) psi.Environment[k] = v;
         _process = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start: " + exe);
         if (Job != IntPtr.Zero) AssignProcessToJobObject(Job, _process.Handle);
         _process.OutputDataReceived += (_, e) => Remember(e.Data);

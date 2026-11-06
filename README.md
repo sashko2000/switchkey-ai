@@ -4,7 +4,7 @@
 
 **KeyboardSwitcher** is a Windows tray app that fixes text typed in the wrong keyboard layout and, optionally,
 corrects, translates and rewrites selected text with a small language model running **locally** on the NPU, GPU or CPU
-(Intel OpenVINO, AMD Ryzen AI, llama.cpp). Typed text is never stored or sent anywhere.
+(Intel OpenVINO, AMD Ryzen AI, llama.cpp; optionally an NVIDIA card). Typed text is never stored or sent anywhere.
 
 ![Settings window](docs/screenshots/settings.png)
 
@@ -49,16 +49,36 @@ one in the order is used. The settings window lists the devices found on this co
 | Processor | NPU | GPU | CPU |
 |---|---|---|---|
 | **Intel** | OpenVINO GenAI 2026.4.1 | OpenVINO, `GPU.0` (Intel graphics) | OpenVINO |
-| **AMD** | [ryzenai-server](https://github.com/lemonade-sdk/ryzenai-server) (Ryzen AI, newest release ≥ 1.7.0) | llama.cpp b11936, Vulkan (Radeon or any Vulkan GPU) | llama.cpp |
+| **AMD** | [ryzenai-server](https://github.com/lemonade-sdk/ryzenai-server) (Ryzen AI, newest release ≥ 1.7.0) | llama.cpp b11936, Vulkan (Radeon) | llama.cpp |
+| **NVIDIA card** (optional) | - | llama.cpp b11936, CUDA 12.4 | - |
+
+**NVIDIA:** turn on *Use the NVIDIA card (partly, if the model doesn't fit)* (off by default). The card is then tried
+first. If the whole model fits into its **free** video memory at load time (GGUF file + ~10% + 1 GB for the context),
+it runs entirely on the card. Otherwise as many layers as fit go to the card and the rest are computed on the CPU
+(partial offload; the layer sizes are read from the GGUF file, 1 GB is kept free). If not even a quarter of the layers
+fits, the card is skipped and the usual order is used. The settings window shows how much of the selected model will be
+on the card. Needs an NVIDIA driver 551.61 or newer; llama.cpp for CUDA and the CUDA libraries are ~0.6 GB. Without this
+option the NVIDIA card is never used, also not through Vulkan.
+
+Example for a 6 GB card: Qwen3.5-4B, Qwen3-4B and Qwen3-1.7B fit entirely; Qwen3-8B ~97%, Qwen3.5-9B ~85%,
+Gemma 4 12B ~68%, Qwen3.8-27B ~29% of the model on the card.
 
 Models (pick one in settings):
 
-| Model | Intel (OpenVINO, INT4) | AMD GPU/CPU (GGUF) | AMD NPU (ONNX) |
-|---|---|---|---|
-| Qwen3-8B (default) | 4.75 GB | Q4_K_M, 5.0 GB | Qwen2.5-7B, 8.2 GB |
-| Qwen3-4B | 2.3 GB, GPU and CPU only (no NPU version) | Q4_K_M, 2.5 GB | Qwen2.5-3B, 3.8 GB |
-| Qwen3-1.7B | converted locally (~1.2 GB) | Q8_0, 1.8 GB | Qwen2.5-1.5B, 2.1 GB |
+| Model | Intel (OpenVINO, INT4) | GGUF (llama.cpp: AMD, NVIDIA, GGUF-only on Intel) | AMD NPU (ONNX) | NVIDIA needs |
+|---|---|---|---|---|
+| Qwen3-8B (default) | 4.75 GB | Q4_K_M, 5.0 GB | Qwen2.5-7B, 8.2 GB | ~6.2 GB |
+| Qwen3.5-9B | - | Q4_K_M, 5.7 GB | - | ~6.8 GB |
+| Gemma 4 12B | - | Q4_K_M, 7.1 GB | - | ~8.3 GB |
+| Qwen3.8-27B (large) | - | UD-Q4_K_M, 16.5 GB | - | ~17.9 GB |
+| Qwen3-4B | 2.3 GB, GPU and CPU only (no NPU version) | Q4_K_M, 2.5 GB | Qwen2.5-3B, 3.8 GB | ~3.6 GB |
+| Qwen3.5-4B | - | Q4_K_M, 2.7 GB | - | ~3.8 GB |
+| Gemma 4 E4B | - | Q4_K_M, 5.0 GB | - | ~6.1 GB |
+| Qwen3-1.7B | converted locally (~1.2 GB) | Q8_0, 1.8 GB | Qwen2.5-1.5B, 2.1 GB | ~2.9 GB |
 
+- **GGUF-only models** (Qwen3.5, Gemma 4, Qwen3.8; GGUF files by [Unsloth](https://huggingface.co/unsloth)): OpenVINO
+  publishes them only for its image+text pipeline, so on Intel they run in llama.cpp on the Arc GPU (Vulkan) or the CPU,
+  without the NPU. Qwen3.8 exists only as a 27B model: for a 24 GB NVIDIA card or a computer with 32+ GB of memory.
 - Mistral-7B and Phi-3.5-mini were removed after the model tests: they are weak in Russian, Ukrainian and Hindi.
 - Qwen3-1.7B is not published for the Intel NPU, so it is converted on this computer: the app installs Python 3.12 (per user)
   and Intel's conversion tools (~3 GB).
@@ -66,8 +86,7 @@ Models (pick one in settings):
 - AMD NPU: only XDNA 2 (Ryzen AI 300/400) with NPU driver 32.0.203.280 or newer. XDNA 1 (Ryzen 7040/8040/200) can't run
   language models and is skipped. If the NPU comes first, llama.cpp with a GGUF model is installed too, so the GPU/CPU
   can take over when the NPU fails.
-- On AMD the model runs in a separate process (llama-server / ryzenai-server) bound to 127.0.0.1; it is closed together
-  with the app.
+- llama-server / ryzenai-server run as a separate process bound to 127.0.0.1; it is closed together with the app.
 
 Example speed (Qwen3-8B, Intel Core Ultra 7 255H): NPU 9.5 tokens/s, first token ~4 s; Arc 140T GPU 17 tokens/s, ~0.1 s;
 CPU 13 tokens/s, ~0.6 s.
@@ -90,12 +109,13 @@ CPU 13 tokens/s, ~0.6 s.
 
 | Command | What it checks | Where it runs |
 |---|---|---|
-| `test.bat`, or **Test Explorer** in Visual Studio (`tests\KeyboardSwitcher.Tests`, MSTest) | layout detection (minimum accuracy per scenario, single-letter words, text conversion, preferred layout, Hindi) and model logic without a real model: prompts for all actions and languages, retries (untranslated text, transliteration), fallback for templates without a system role, text clean-up, device order NPU → GPU → CPU for Intel and AMD, installation plans, catalog and translations, the local server backend (fake server), chat (history trimming, saved chats) | anywhere, GitHub Actions |
+| `test.bat`, or **Test Explorer** in Visual Studio (`tests\KeyboardSwitcher.Tests`, MSTest) | layout detection (minimum accuracy per scenario, single-letter words, text conversion, preferred layout, Hindi) and model logic without a real model: prompts for all actions and languages, retries (untranslated text, transliteration), fallback for templates without a system role, text clean-up, device order NPU → GPU → CPU for Intel and AMD, NVIDIA (memory check, CUDA first, partial offload, GGUF header), GGUF-only models, installation plans, catalog and translations, the local server backend (fake server), chat (history trimming, saved chats) | anywhere, GitHub Actions |
 | `test_detector.bat` | detailed layout detection report with error examples (`-v`) | anywhere |
-| `tools\ModelTests\model_tests.bat` | every catalog model on every device of this computer (NPU, GPU, CPU) with real requests: correction, translation to all 6 languages, every assistant action. Downloads missing models; writes `model_test_report.md` | a real Windows computer (Intel or AMD) |
+| `tools\ModelTests\model_tests.bat` | every catalog model on every device of this computer (NPU, GPU, CPU, NVIDIA) with real requests: correction, translation to all 6 languages, every assistant action. Downloads missing models; writes `model_test_report.md` | a real Windows computer (Intel or AMD) |
 
-`model_tests.bat` options: `--models qwen3-8b,phi-3.5-mini`, `--devices NPU,GPU,CPU`, `--no-download`, `--quick` (4 tests per device).
-Testing all models downloads up to ~15 GB (Qwen3-1.7B is converted on Intel) and takes 1-3 hours.
+`model_tests.bat` options: `--models qwen3-8b,qwen3.5-9b`, `--devices NPU,GPU,CPU,NVIDIA`, `--no-download`, `--quick` (4 tests per device).
+By default all models except Qwen3.8-27B are tested (add it with `--models qwen3.8-27b`): up to ~35 GB of downloads
+(Qwen3-1.7B is converted on Intel), several hours.
 - `tools\KeyProbe` shows what the keyboard sends (useful for Apple keyboards); `tools\LangTest` checks how well the
   model translates between languages.
 
@@ -112,7 +132,8 @@ Testing all models downloads up to ~15 GB (Qwen3-1.7B is converted on Intel) and
 - **Smart App Control** (Windows 11) blocks unsigned programs such as llama.cpp and ryzenai-server ("Bad Image",
   0xC0E90002). When it is on, AMD computers use OpenVINO (signed by Intel) on the CPU instead. The app itself is unsigned
   too, so Smart App Control may also block `KeyboardSwitcher.exe` downloaded from Releases.
-- The AMD GPU/NPU path has not been fully tested on real AMD hardware yet.
+- The AMD GPU/NPU path, the NVIDIA (CUDA) path and the GGUF-only models have not been fully tested on real hardware yet.
+- With Smart App Control on, the GGUF-only models and the NVIDIA card are not available (llama.cpp is unsigned).
 
 ## Project structure
 
@@ -126,7 +147,7 @@ Testing all models downloads up to ~15 GB (Qwen3-1.7B is converted on Intel) and
 | `ChatStore.cs` | saved chats |
 | `AiCorrector.cs` | prompts for correction, translation and rewriting |
 | `AiPlatform.cs` | engine choice by processor vendor, NPU → GPU → CPU order |
-| `OpenVinoGenAI.cs`, `LlmBackend.cs`, `AmdSupport.cs` | OpenVINO C API, local server backend, AMD detection and engines |
+| `OpenVinoGenAI.cs`, `LlmBackend.cs`, `AmdSupport.cs`, `NvidiaSupport.cs` | OpenVINO C API, local server backend, AMD detection and llama.cpp engines, NVIDIA cards (CUDA) |
 | `AiSetup.cs` | downloads and installation |
 | `Loc.cs`, `Resources/Strings.tsv` | interface translations |
 

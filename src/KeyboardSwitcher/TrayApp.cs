@@ -452,7 +452,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                 return false;
             }
 
-        bool modelChanged = s.AiModel != _settings.AiModel || !string.Equals(s.AiDevice, _settings.AiDevice, StringComparison.OrdinalIgnoreCase);
+        bool modelChanged = s.AiModel != _settings.AiModel || s.AiNvidia != _settings.AiNvidia
+                            || !string.Equals(s.AiDevice, _settings.AiDevice, StringComparison.OrdinalIgnoreCase);
         bool langChanged = s.UiLanguage != _settings.UiLanguage;
         _settings = s;
         _settings.Save();
@@ -477,7 +478,9 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
     {
         if (InstallRunning) return;
         var dir = AiPlatform.InstalledKey(_settings);
-        if (dir != null)
+        // The NVIDIA card was allowed after the model was installed: llama.cpp CUDA and the GGUF file are still missing
+        bool nvidiaOnly = dir != null && AiPlatform.NvidiaMissing(_settings);
+        if (dir != null && !nvidiaOnly)
         {
             if (_settings.AiLoadOnDemand)
             {
@@ -492,6 +495,13 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         var text = L.T("msg.install_plan", string.Join("\n- ", steps), gb, AiSetup.BaseDir);
         if (MessageBox(_settingsWindow?.Hwnd ?? _hwnd, text, AppName, 0x24 /* MB_YESNO | MB_ICONQUESTION */) != 6 /* IDYES */)
         {
+            if (nvidiaOnly)
+            {
+                // Keep the model on the other devices, just without the NVIDIA card
+                _settings.AiNvidia = false;
+                _settings.Save();
+                return;
+            }
             _settings.AiEnabled = false;
             _settings.Save();
             UpdateIcon();
@@ -528,7 +538,8 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         _installCts = cts;
         _installStatus = L.T("st.preparing");
         OnAiStatusChanged();
-        Log.Write($"Installing for model {info.Id} ({(AiPlatform.Amd ? "AMD engines" : "OpenVINO")})");
+        Log.Write($"Installing for model {info.Id} ({(AiPlatform.UsesLlama(info) ? "llama.cpp" : "OpenVINO")}" +
+                  (AiPlatform.UseNvidia(_settings) ? ", NVIDIA CUDA" : "") + ")");
         var progress = new UiProgress(this);
         Task.Run(async () =>
         {

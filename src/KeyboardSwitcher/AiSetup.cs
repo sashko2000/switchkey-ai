@@ -17,6 +17,15 @@ public sealed record ModelInfo(string Id, string Repo, string FolderName, bool N
 {
     public double GgufGb => GgufBytes / 1073741824.0;
 
+    /// <summary>
+    /// Only a GGUF version: runs in llama.cpp on any processor (Intel: Arc GPU via Vulkan and CPU, no NPU).
+    /// OpenVINO publishes the newer models (Qwen3.5, Gemma 4) only for its image+text pipeline, not the text one we use.
+    /// </summary>
+    public bool GgufOnly => Repo.Length == 0;
+
+    /// <summary>A model without an OpenVINO version (GgufOnly) - its GGUF file is downloaded from Hugging Face.</summary>
+    public static ModelInfo Gguf(string id, string repo, string file, long bytes) => new(id, "", "", false, 0, repo, file, bytes, OpenVinoNpu: false);
+
     public string Title => L.T("model." + Id + ".title");
     public string Note => L.T("model." + Id + ".note");
 }
@@ -39,11 +48,17 @@ internal static class AiSetup
     {
         new ModelInfo("qwen3-8b", "OpenVINO/Qwen3-8B-int4-cw-ov", "Qwen3-8B-int4-cw-ov", false, 4.75,
             "Qwen/Qwen3-8B-GGUF", "Qwen3-8B-Q4_K_M.gguf", 5027783488, "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu", 8.2),
+        // Newer models (2026), GGUF only (llama.cpp): Q4_K_M from unsloth; Qwen3.8 exists only as 27B (UD = Unsloth Dynamic)
+        ModelInfo.Gguf("qwen3.5-9b", "unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf", 5680522464),
+        ModelInfo.Gguf("gemma-4-12b", "unsloth/gemma-4-12b-it-GGUF", "gemma-4-12b-it-Q4_K_M.gguf", 7121861440),
+        ModelInfo.Gguf("qwen3.8-27b", "unsloth/Qwen3.8-27B-GGUF", "Qwen3.8-27B-UD-Q4_K_M.gguf", 16464440224),
         // Mistral-7B and Phi-3.5-mini were removed after the model tests (06.11.2026): weak in Russian, Ukrainian and Hindi.
         // Qwen3-4B: the locally converted NPU version did not load, so the ready OpenVINO version is used (GPU and CPU only).
         new ModelInfo("qwen3-4b", "OpenVINO/Qwen3-4B-int4-ov", "Qwen3-4B-int4-ov", false, 2.13,
             "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf", 2497280256, "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu", 3.81,
             OpenVinoNpu: false),
+        ModelInfo.Gguf("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf", 2740937888),
+        ModelInfo.Gguf("gemma-4-e4b", "unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf", 4977171584),
         new ModelInfo("qwen3-1.7b", "Qwen/Qwen3-1.7B", "Qwen3-1.7B-int4-npu", true, 1.2,
             "Qwen/Qwen3-1.7B-GGUF", "Qwen3-1.7B-Q8_0.gguf", 1834426016, "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu", 2.1),
     };

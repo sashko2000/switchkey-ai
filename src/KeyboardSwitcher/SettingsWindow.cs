@@ -25,7 +25,7 @@ internal sealed class SettingsWindow
         ID_APP_COMBO = 1020, ID_APP_ADD = 1021, ID_APP_LIST = 1022, ID_APP_REMOVE = 1023,
         ID_AI = 1030, ID_MODEL = 1031, ID_MODEL_NOTE = 1032, ID_STATUS = 1033,
         ID_HK_TR = 1050, ID_HK_TR_DEF = 1051, ID_HK_TR_OFF = 1052, ID_HK_CHAT = 1066, ID_HK_CHAT_DEF = 1067, ID_HK_CHAT_OFF = 1068, ID_TR_MODE = 1053, ID_UNLOAD = 1054, ID_ON_DEMAND = 1055,
-        ID_UI_LANG = 1060, ID_LANG_A = 1061, ID_LANG_B = 1062, ID_LAYOUT_PRIO = 1063, ID_DEVICE = 1064, ID_DEVICE_INFO = 1065;
+        ID_UI_LANG = 1060, ID_LANG_A = 1061, ID_LANG_B = 1062, ID_LAYOUT_PRIO = 1063, ID_DEVICE = 1064, ID_DEVICE_INFO = 1065, ID_NVIDIA = 1069;
 
     private const string ClassName = "KeyboardSwitcherSettings";
     private static WndProc? _classProc;      // one delegate per window class
@@ -179,7 +179,8 @@ internal sealed class SettingsWindow
         Ctl(ID_AI, "BUTTON", L.T("sw.ai_enable"), BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, 440, 30, 384, 22);
         Label(L.T("sw.model"), 440, 66, 60);
         var cmb = Ctl(ID_MODEL, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 500, 62, 320, 200);
-        foreach (var m in AiSetup.Catalog) SendMessage(cmb, CB_ADDSTRING, IntPtr.Zero, m.Title);
+        // With the download size for this computer (OpenVINO or GGUF version)
+        foreach (var m in AiSetup.Catalog) SendMessage(cmb, CB_ADDSTRING, IntPtr.Zero, L.T("sw.model_item", m.Title, AiPlatform.DownloadGb(m)));
         Label("", 440, 94, 380, 54, ID_MODEL_NOTE);
 
         Label(L.T("sw.pair"), 440, 158, 140);
@@ -207,9 +208,10 @@ internal sealed class SettingsWindow
         // Up to 4 devices with long names (Intel iGPU + NVIDIA dGPU) - room for three lines
         Label(L.T(AiPlatform.CanDetectDevices ? "sw.dev.detecting" : "sw.dev.unknown"), 440, 280, 380, 54, ID_DEVICE_INFO);
 
-        Ctl(ID_ON_DEMAND, "BUTTON", L.T("sw.on_demand"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 338, 384, 22);
-        Label(L.T("sw.memory_hint"), 440, 364, 380, 48);
-        Label("", 440, 416, 380, 70, ID_STATUS);
+        Ctl(ID_NVIDIA, "BUTTON", L.T("sw.nvidia"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 336, 384, 22);
+        Ctl(ID_ON_DEMAND, "BUTTON", L.T("sw.on_demand"), BS_AUTOCHECKBOX | WS_TABSTOP, 440, 360, 384, 22);
+        Label(L.T("sw.memory_hint"), 440, 386, 380, 46);
+        Label("", 440, 434, 380, 66, ID_STATUS);
 
         // ---------- buttons
         Ctl(ID_OK, "BUTTON", L.T("sw.ok"), BS_DEFPUSHBUTTON | WS_TABSTOP | WS_GROUP, 576, 506, 80, 28);
@@ -236,6 +238,7 @@ internal sealed class SettingsWindow
         SendMessage(_ctl[ID_LANG_A], CB_SETCURSEL, (IntPtr)LangIndex(s.TranslateLangA), IntPtr.Zero);
         SendMessage(_ctl[ID_LANG_B], CB_SETCURSEL, (IntPtr)LangIndex(s.TranslateLangB), IntPtr.Zero);
         SetCheck(ID_ON_DEMAND, s.AiLoadOnDemand);
+        SetCheck(ID_NVIDIA, s.AiNvidia);
         int di = Array.FindIndex(DeviceCodes, c => string.Equals(c, s.AiDevice, StringComparison.OrdinalIgnoreCase));
         SendMessage(_ctl[ID_DEVICE], CB_SETCURSEL, (IntPtr)Math.Max(0, di), IntPtr.Zero);
 
@@ -269,6 +272,7 @@ internal sealed class SettingsWindow
             TranslateLangB = SelectedLang(ID_LANG_B),
             AssistantLastTask = src.AssistantLastTask,
             AiLoadOnDemand = GetCheck(ID_ON_DEMAND),
+            AiNvidia = GetCheck(ID_NVIDIA),
             AiEnabled = GetCheck(ID_AI),
             AiModel = SelectedModel().Id,
             ModelPath = src.ModelPath,
@@ -321,11 +325,22 @@ internal sealed class SettingsWindow
         var m = SelectedModel();
         // The plan depends on the processor (AMD: other engines and model formats) and on the chosen device
         var probe = _host.Settings;
-        var cur = new Settings { AiModel = m.Id, AiDevice = SelectedDevice(), ModelPath = probe.ModelPath, AiDevices = probe.AiDevices };
+        var cur = new Settings { AiModel = m.Id, AiDevice = SelectedDevice(), ModelPath = probe.ModelPath, AiDevices = probe.AiDevices,
+                                 AiNvidia = GetCheck(ID_NVIDIA) };
         var (installed, gb, convert) = AiPlatform.ModelState(m, cur);
         var state = installed ? L.T("sw.state.installed") : convert ? L.T("sw.state.convert", gb) : L.T("sw.state.download", gb);
         if (AiPlatform.Amd && m.NpuRepo != null && SelectedDevice() is "auto" or "NPU" && Hardware.AmdNpuUsable(Hardware.FindAmdNpu()))
             state += " " + L.T("sw.state.amd_npu", m.NpuRepo);
+        if (m.GgufOnly && AiPlatform.LlamaBlocked) state += " " + L.T("sw.state.sac_blocked");
+        else if (m.GgufOnly && !AiPlatform.Amd) state += " " + L.T("sw.state.no_npu");
+        // Does the model fit into the NVIDIA card (by total memory; the free memory is checked when loading)
+        if (AiPlatform.UseNvidia(cur) && Nvidia.Gpus().Where(Nvidia.DriverOk).MaxBy(g => g.TotalBytes) is { } g)
+        {
+            int pct = Nvidia.EstimatePercent(m, g.TotalBytes);
+            state += " " + (pct >= 100 ? L.T("sw.state.nvidia_fits", Nvidia.NeededBytes(m) / 1073741824.0, g.TotalBytes / 1073741824.0)
+                : pct >= Nvidia.MinPartialShare * 100 ? L.T("sw.state.nvidia_partial", Nvidia.NeededBytes(m) / 1073741824.0, g.TotalBytes / 1073741824.0, pct)
+                : L.T("sw.state.nvidia_too_big", Nvidia.NeededBytes(m) / 1073741824.0, g.TotalBytes / 1073741824.0));
+        }
         SetWindowText(_ctl[ID_MODEL_NOTE], L.T("sw.model_note", m.Note, state));
     }
 
@@ -500,6 +515,7 @@ internal sealed class SettingsWindow
                 }
             case ID_MODEL when code == CBN_SELCHANGE:
             case ID_DEVICE when code == CBN_SELCHANGE:
+            case ID_NVIDIA when code == BN_CLICKED:
                 UpdateModelNote();
                 break;
         }

@@ -60,6 +60,12 @@ public sealed class Settings
     /// </summary>
     public string AiDevice { get; set; } = "auto";
 
+    /// <summary>
+    /// Use an NVIDIA graphics card (llama.cpp with CUDA) first: the whole model if it fits into the free memory,
+    /// otherwise as many layers as fit (the rest on the CPU); if not even a quarter fits - the usual order. Off by default.
+    /// </summary>
+    public bool AiNvidia { get; set; } = false;
+
     /// <summary>Devices in priority order: NPU, GPU (GPU.0 - first graphics adapter), CPU.</summary>
     public List<string> AiDevices { get; set; } = new() { "NPU", "GPU.0", "CPU" };
 

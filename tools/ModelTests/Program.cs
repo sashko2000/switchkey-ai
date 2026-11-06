@@ -3,14 +3,17 @@ using System.Text;
 using KeyboardSwitcher;
 
 // Tests every catalog model on every device of this computer with real requests and writes model_test_report.md.
-// Intel: OpenVINO on NPU / GPU / CPU. AMD: Ryzen AI NPU, llama.cpp on the Radeon GPU and the CPU
-// (or OpenVINO on the CPU when Windows Smart App Control blocks unsigned programs).
+// Intel: OpenVINO on NPU / GPU / CPU (GGUF-only models: llama.cpp on the Arc GPU and the CPU).
+// AMD: Ryzen AI NPU, llama.cpp on the Radeon GPU and the CPU (or OpenVINO on the CPU when Windows Smart App Control
+// blocks unsigned programs). NVIDIA: llama.cpp CUDA, if the model fits into the card's free memory.
 // Missing engines and models are downloaded (or converted) exactly as the app does it.
 
 Console.OutputEncoding = Encoding.UTF8;
 string? Arg(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
-var modelIds = (Arg("--models") ?? string.Join(",", AiSetup.Catalog.Select(m => m.Id))).Split(',', StringSplitOptions.RemoveEmptyEntries);
-var kinds = (Arg("--devices") ?? "NPU,GPU,CPU").ToUpperInvariant().Split(',', StringSplitOptions.RemoveEmptyEntries);
+// The 27B model (16.5 GB) only when asked for: --models qwen3.8-27b
+var modelIds = (Arg("--models") ?? string.Join(",", AiSetup.Catalog.Where(m => m.GgufBytes < 10_000_000_000).Select(m => m.Id)))
+    .Split(',', StringSplitOptions.RemoveEmptyEntries);
+var kinds = (Arg("--devices") ?? "NPU,GPU,CPU" + (Nvidia.Present ? ",NVIDIA" : "")).ToUpperInvariant().Split(',', StringSplitOptions.RemoveEmptyEntries);
 bool download = !args.Contains("--no-download"), quick = args.Contains("--quick");
 
 AiSetup.RegisterNativeResolver();
@@ -35,7 +38,7 @@ foreach (var id in modelIds)
         try
         {
             // AMD: "NPU" installs both the NPU and the llama.cpp engine when the NPU is usable
-            var install = new Settings { AiModel = m.Id, AiDevice = AiPlatform.Amd ? "NPU" : "auto" };
+            var install = new Settings { AiModel = m.Id, AiDevice = AiPlatform.Amd ? "NPU" : "auto", AiNvidia = kinds.Contains("NVIDIA") };
             var (steps, gb) = AiPlatform.Plan(install);
             if (steps.Count > 0)
             {
@@ -54,11 +57,12 @@ foreach (var id in modelIds)
 
     foreach (var kind in kinds)
     {
-        var s = new Settings { AiModel = m.Id, AiDevice = kind };
+        // NVIDIA: the CUDA candidate comes first when allowed (and the model fits into the free memory)
+        var s = new Settings { AiModel = m.Id, AiDevice = kind == "NVIDIA" ? "auto" : kind, AiNvidia = kind == "NVIDIA" };
         LoadCandidate? cand;
         try { cand = AiPlatform.Candidates(s).FirstOrDefault(); }
         catch (Exception ex) { Console.WriteLine($"{kind}: {ex.Message}"); cand = null; }
-        if (cand == null || KindOf(cand.Device) != kind)
+        if (cand == null || (kind == "NVIDIA" ? !cand.Device.Contains("CUDA") : KindOf(cand.Device) != kind))
         {
             Console.WriteLine($"{kind}: not available on this computer or not installed - skipped");
             rows.Add($"| {m.Id} | {kind} | - | - | - | not available | - |");
