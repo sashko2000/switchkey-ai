@@ -2,6 +2,8 @@ using KeyboardSwitcher;
 
 internal static class Program
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(int processId);
+
     private const string MutexName = @"Local\KeyboardSwitcher-7f3c2a";
 
     /// <summary>Take the single-instance mutex; wait a little: a restarting copy may still be closing.</summary>
@@ -22,8 +24,14 @@ internal static class Program
         var mutex = TakeMutex();
         if (mutex == null)
         {
-            L.SetLanguage(Languages.DefaultUi());
-            Native.MessageBox(IntPtr.Zero, L.T("msg.already_running"), "KeyboardSwitcher", 0x40);
+            // Already running: ask that copy to show its icon and settings (it may have started before the taskbar)
+            uint show = Native.RegisterWindowMessage(Native.ShowMessageName);
+            AllowSetForegroundWindow(-1);   // ASFW_ANY: the running copy may bring its settings window to the front
+            if (show == 0 || !Native.PostMessage((IntPtr)0xFFFF /* HWND_BROADCAST */, show, IntPtr.Zero, IntPtr.Zero))
+            {
+                L.SetLanguage(Languages.DefaultUi());
+                Native.MessageBox(IntPtr.Zero, L.T("msg.already_running"), "KeyboardSwitcher", 0x40);
+            }
             return 0;
         }
 

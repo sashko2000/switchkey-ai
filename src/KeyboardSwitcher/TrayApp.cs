@@ -23,7 +23,10 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
 
     private IntPtr _hwnd;
     private WndProc? _wndProc;
-    private uint _taskbarCreated;
+    private uint _taskbarCreated, _showMessage;
+    private bool _trayAdded;
+    private int _trayRetries;
+    private const int TrayRetryTimerId = 2;
     private IntPtr _iconOn, _iconOff, _iconBusy;
     private readonly ConcurrentQueue<Action> _queue = new();
     private volatile bool _aiBusy;
@@ -117,6 +120,11 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         if (_hwnd == IntPtr.Zero) throw new InvalidOperationException(L.T("err.window_create", Marshal.GetLastWin32Error()));
         Input.OwnerWindow = _hwnd;
         _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+        _showMessage = RegisterWindowMessage(ShowMessageName);
+        // With admin rights Windows blocks messages from Explorer and other normal programs: let these two through
+        // ("TaskbarCreated" - the tray is ready / Explorer restarted; ours - a second copy asks to show the icon)
+        ChangeWindowMessageFilterEx(_hwnd, _taskbarCreated, 1, IntPtr.Zero);
+        ChangeWindowMessageFilterEx(_hwnd, _showMessage, 1, IntPtr.Zero);
     }
 
     private void LoadIcons()
@@ -173,16 +181,32 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
         return t.Length > 127 ? t[..127] : t;
     }
 
+    /// <summary>
+    /// Add the tray icon. Started at sign-in (Task Scheduler), the app may come before the taskbar: then it tries again
+    /// every 2 seconds for two minutes (and also when Explorer announces "TaskbarCreated").
+    /// </summary>
     private void AddTrayIcon()
     {
         var d = IconData(NIF_MESSAGE | NIF_ICON | NIF_TIP);
-        Shell_NotifyIcon(NIM_ADD, ref d);
+        var old = IconData(0);
+        Shell_NotifyIcon(NIM_DELETE, ref old);   // after an Explorer restart an old entry may be left
+        _trayAdded = Shell_NotifyIcon(NIM_ADD, ref d);
+        if (_trayAdded)
+        {
+            if (_trayRetries > 0) Log.Write($"Tray icon added (attempt {_trayRetries + 1})");
+            _trayRetries = 0;
+            KillTimer(_hwnd, (UIntPtr)TrayRetryTimerId);
+            return;
+        }
+        if (_trayRetries == 0) Log.Write("Tray icon: the taskbar is not ready, trying again");
+        if (++_trayRetries <= 60) SetTimer(_hwnd, (UIntPtr)TrayRetryTimerId, 2000, IntPtr.Zero);
+        else { KillTimer(_hwnd, (UIntPtr)TrayRetryTimerId); Log.Write("Tray icon could not be added"); }
     }
 
     private void UpdateIcon()
     {
         var d = IconData(NIF_ICON | NIF_TIP);
-        Shell_NotifyIcon(NIM_MODIFY, ref d);
+        if (!Shell_NotifyIcon(NIM_MODIFY, ref d) && !_trayAdded) AddTrayIcon();
     }
 
     public void Notify(string title, string text, bool warning = false)
@@ -211,13 +235,20 @@ internal sealed class TrayApp : IDisposable, SettingsWindow.IHost, AssistantWind
                     while (_queue.TryDequeue(out var a)) a();
                     return IntPtr.Zero;
                 case WM_TIMER:
-                    UnloadIfIdle();
+                    if ((int)wParam == TrayRetryTimerId) AddTrayIcon(); else UnloadIfIdle();
                     return IntPtr.Zero;
                 case WM_DESTROY:
                     PostQuitMessage(0);
                     return IntPtr.Zero;
             }
-            if (msg == _taskbarCreated && _taskbarCreated != 0) AddTrayIcon(); // Explorer restarted
+            if (msg == _taskbarCreated && _taskbarCreated != 0) AddTrayIcon(); // the taskbar is ready / Explorer restarted
+            if (msg == _showMessage && _showMessage != 0)
+            {
+                // A second copy was started: make sure the icon is there and show the settings
+                Log.Write("Second copy started: showing the icon and settings");
+                AddTrayIcon();
+                OpenSettings();
+            }
         }
         catch (Exception ex)
         {

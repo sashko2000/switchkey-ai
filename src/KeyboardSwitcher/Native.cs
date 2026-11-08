@@ -105,6 +105,11 @@ internal static unsafe class Native
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool DestroyWindow(IntPtr hWnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string name);
+    /// <summary>Let a message from a program with lower rights through (MSGFLT_ALLOW = 1) - for an elevated window.</summary>
+    [DllImport("user32.dll")] public static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint msg, uint action, IntPtr changeInfo);
+
+    /// <summary>Sent by a second copy of the app: show the tray icon and the settings of the running one.</summary>
+    public const string ShowMessageName = "KeyboardSwitcher-Show-7f3c2a";
     [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] public static extern IntPtr CreatePopupMenu();

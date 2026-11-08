@@ -21,6 +21,7 @@ public class ElevationTests
         Assert.AreEqual(@"PC\Олександр", xml.Descendants(Ns + "LogonTrigger").Single().Element(Ns + "UserId")!.Value);
         Assert.AreEqual(@"C:\Tools & Apps\KeyboardSwitcher.exe", xml.Descendants(Ns + "Command").Single().Value, "escaped and read back");
         Assert.AreEqual("PT0S", xml.Descendants(Ns + "ExecutionTimeLimit").Single().Value, "not stopped after 72 hours");
+        Assert.AreEqual("PT15S", xml.Descendants(Ns + "Delay").Single().Value, "the taskbar must be there for the tray icon");
         Assert.AreEqual("false", xml.Descendants(Ns + "DisallowStartIfOnBatteries").Single().Value);
         Assert.AreEqual("false", xml.Descendants(Ns + "StopIfGoingOnBatteries").Single().Value);
     }

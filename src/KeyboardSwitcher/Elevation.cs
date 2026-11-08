@@ -28,7 +28,8 @@ internal static class Elevation
     {
         static string X(string s) => System.Security.SecurityElement.Escape(s) ?? "";
         var trigger = atLogon
-            ? $"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{X(user)}</UserId></LogonTrigger></Triggers>"
+            // A short delay: let the taskbar appear first (the tray icon needs it)
+            ? $"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{X(user)}</UserId><Delay>PT15S</Delay></LogonTrigger></Triggers>"
             : "<Triggers />";
         return $"""
             <?xml version="1.0" encoding="UTF-16"?>
