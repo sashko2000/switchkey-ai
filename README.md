@@ -60,12 +60,17 @@ and Hindi (the Windows language by default).
 - Only the layouts installed in Windows are used: English (US), Russian, Ukrainian, Hindi InScript.
 - **Preferred layout:** when a word is the same in several layouts (`vfvf` = «мама» in Russian and Ukrainian), the
   preferred one wins - unless the previous word was in the other language.
-- **Technical words** (cmd, git, npm, exe, ssh and ~380 more) are recognized although everyday dictionaries lack them.
-  The list is `src/KeyboardSwitcher/Resources/tech.txt` (one word per line; rebuild after editing).
-- **Code editors:** in the code editor of Visual Studio and VS Code (also Cursor, Windsurf) the layout is not changed;
-  their search boxes, Solution Explorer, chat and terminal keep the auto-fix. The focused element is found with UI
-  Automation (Visual Studio: `WpfTextView`, VS Code: Monaco `inputarea`); the log shows what was detected.
-  *Settings → Not in the code editor* turns it off.
+- **Technical words** (cmd, git, npm, exe, ssh, wpf, terraform and ~640 more) are recognized although everyday
+  dictionaries lack them. Words with digits or symbols are fixed only if they are in this list (`уыз32` → `esp32`,
+  `л8ы` → `k8s`, `с№` → `c#`, `с++` → `c++`, `ютуе` → `.net`, `тщвуюоы` → `node.js`); other words with digits (`5ка`)
+  are left alone. Technical abbreviations in capitals are fixed too (`ФШ` → `AI`, `ФЗШ` → `API`), Russian ones
+  (`ОК`, `РФ`, `МВД`) are not. The list is
+  `src/KeyboardSwitcher/Resources/tech.txt` (one word per line; rebuild after editing).
+- **Code editor of Visual Studio:** the layout is not changed in the code editor; the search boxes, Solution Explorer
+  and other fields keep the auto-fix. The focused element is found with UI Automation (`WpfTextView`), and only in WPF
+  windows: web-based tool windows (WebView2, e.g. chat panels) and Electron editors (VS Code) are not asked, because
+  UI Automation makes them build a heavy accessibility tree and Visual Studio could hang. For VS Code, add `Code.exe`
+  to the excluded programs instead. *Settings → Not in the Visual Studio code editor* turns it off.
 - **Excluded programs:** password managers and remote desktop are excluded by default; add more in *Settings*.
 - Undoing a fix with Ctrl+Alt+Z remembers the word, so it is not fixed again.
 - **Programs run as administrator** (e.g. Visual Studio started "as administrator"): Windows doesn't pass their

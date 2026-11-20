@@ -49,9 +49,20 @@ public static class Layouts
         // These two keys produce letters only in Hindi: = -> ृ (कृपया), \ -> ॉ (डॉक्टर)
         Add(VK_OEM_PLUS, ('=', '+'), ('=', '+'), ('=', '+'), ('ृ', 'ऋ'));
         Add(VK_OEM_5, ('\\', '|'), ('\\', '/'), ('\\', '/'), ('ॉ', 'ऑ'));
+
+        // Digits: part of a word ("esp32", "k8s", "i18n"), the same in every layout. With Shift they give different
+        // symbols (# in English = № in Russian: "c#" typed as "с№"). Words with these keys are fixed only if they are
+        // known technical terms (LayoutDetector).
+        const string digits = "1234567890", enShift = "!@#$%^&*()", ruShift = "!\"№;%:?*()";
+        for (int i = 0; i < digits.Length; i++)
+            Add(digits[i], (digits[i], enShift[i]), (digits[i], ruShift[i]), (digits[i], ruShift[i]), (digits[i], enShift[i]));
     }
 
-    private static readonly HashSet<int> HindiOnlyKeys = new() { VK_OEM_PLUS, VK_OEM_5 };
+    /// <summary>A digit key of the main keyboard (0-9).</summary>
+    public static bool IsDigitKey(int vk) => vk is >= 0x30 and <= 0x39;
+
+    // \ produces a letter only in Hindi (ॉ); = and + are part of words like "c++" in every layout
+    private static readonly HashSet<int> HindiOnlyKeys = new() { VK_OEM_5 };
 
     private static void Add(int vk, (char, char) en, (char, char) ru, (char, char) uk, (char, char) hi)
     {
@@ -67,6 +78,9 @@ public static class Layouts
     /// <summary>The key is part of typing a word (a letter in at least one layout).</summary>
     /// <param name="hindi">Whether the Hindi layout is installed: only there the = and \ keys produce letters.</param>
     public static bool IsWordKey(int vk, bool hindi = false) => Keys.ContainsKey(vk) && (hindi || !HindiOnlyKeys.Contains(vk));
+
+    /// <summary>Digit row and =/+: a word with these keys is fixed only if it is a technical term (esp32, c#, c++).</summary>
+    public static bool IsSymbolKey(int vk) => IsDigitKey(vk) || vk == VK_OEM_PLUS;
 
     public static char CharFor(KeyStroke ks, Lang lang)
     {

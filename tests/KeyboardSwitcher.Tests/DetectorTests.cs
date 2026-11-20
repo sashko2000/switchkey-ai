@@ -168,4 +168,61 @@ public class DetectorTests
             Assert.AreEqual(Enum.Parse<Lang>(expected), t, w);
         }
     }
+
+    [DataTestMethod]
+    [DataRow("esp32", "Ru", true)] [DataRow("ESP32", "Ru", true)] [DataRow("k8s", "Ru", true)] [DataRow("i18n", "Uk", true)]
+    [DataRow("sha256", "Ru", true)] [DataRow("utf8", "Ru", true)] [DataRow("x64", "Ru", true)] [DataRow("stm32", "Uk", true)]
+    [DataRow("esp32", "En", false)]    // typed correctly
+    [DataRow("2024", "Ru", false)]     // only digits
+    [DataRow("5ка", "Ru", false)]      // a Russian word with a digit stays as it is
+    [DataRow("abc12", "Ru", false)]    // not a known term
+    public void WordsWithDigits_OnlyTechTerms(string word, string typedIn, bool expectSwitch)
+    {
+        // The keys of the word as it should be (English for terms), shown in the layout it was typed in
+        var lang = word.Any(c => c >= 'а' && c <= 'я') ? Lang.Ru : Lang.En;
+        var k = Layouts.KeysFor(word, lang)!;
+        var shown = Enum.Parse<Lang>(typedIn);
+        bool sw = _det.ShouldSwitch(k, shown, All3, out var target, out var conv, out var why);
+        Assert.AreEqual(expectSwitch, sw, $"{Layouts.TextFor(k, shown)} -> {conv} [{why}]");
+        if (expectSwitch) { Assert.AreEqual(Lang.En, target); Assert.AreEqual(word, conv); }
+    }
+
+    [TestMethod]
+    public void DigitsAndPlusAreWordKeys()
+    {
+        Assert.IsTrue(Layouts.IsWordKey('3'));
+        Assert.IsTrue(Layouts.IsSymbolKey('3'));
+        Assert.IsTrue(Layouts.IsWordKey(Layouts.VK_OEM_PLUS), "c++ in every layout");
+        Assert.IsFalse(Layouts.IsWordKey(Layouts.VK_OEM_5), "\\ is a letter only in Hindi");
+        Assert.AreEqual("esp32", Layouts.TextFor(Layouts.KeysFor("уыз32", Lang.Ru)!, Lang.En));
+        Assert.AreEqual("c#", Layouts.TextFor(Layouts.KeysFor("с№", Lang.Ru)!, Lang.En));
+    }
+
+    [DataTestMethod]
+    [DataRow("с№", "c#")] [DataRow("С№", "C#")] [DataRow("а№", "f#")] [DataRow("с++", "c++")]
+    [DataRow("ютуе", ".net")] [DataRow("фызютуе", "asp.net")] [DataRow("тщвуюоы", "node.js")]
+    [DataRow("ФШ", "AI")] [DataRow("ФЗШ", "API")] [DataRow("ГШ", "UI")] [DataRow("ЫЙД", "SQL")]
+    public void TechTermsWithSymbolsAndAcronyms(string typedRu, string expected)
+    {
+        var k = Layouts.KeysFor(typedRu, Lang.Ru)!;
+        Assert.IsTrue(_det.ShouldSwitch(k, Lang.Ru, All3, out var target, out var conv, out var why), $"{typedRu} -> {conv} [{why}]");
+        Assert.AreEqual(Lang.En, target);
+        Assert.AreEqual(expected, conv);
+    }
+
+    [DataTestMethod]
+    [DataRow("ОК")] [DataRow("РФ")] [DataRow("США")] [DataRow("МВД")] [DataRow("с+")] [DataRow("№5")]
+    public void RussianAbbreviationsAndSymbols_StayAsTyped(string typedRu)
+    {
+        var k = Layouts.KeysFor(typedRu, Lang.Ru)!;
+        Assert.IsFalse(_det.ShouldSwitch(k, Lang.Ru, All3, out _, out var conv, out var why), $"{typedRu} -> {conv} [{why}]");
+    }
+
+    [DataTestMethod]
+    [DataRow("c#")] [DataRow("C#")] [DataRow("c++")] [DataRow(".net")] [DataRow("node.js")] [DataRow("AI")] [DataRow("esp32")]
+    public void TypedCorrectly_StaysAsTyped(string word)
+    {
+        var k = Layouts.KeysFor(word, Lang.En)!;
+        Assert.IsFalse(_det.ShouldSwitch(k, Lang.En, All3, out _, out var conv, out var why), $"{word} -> {conv} [{why}]");
+    }
 }

@@ -27,6 +27,9 @@ public sealed class LayoutDetector
         return best;
     }
 
+    /// <summary>Technical terms (tech.txt), lower case - the only words with digits that are switched (esp32, k8s).</summary>
+    private readonly HashSet<string> _tech = new(StringComparer.Ordinal);
+
     /// <summary>Rank given to words from the technical terms list (cmd, git, npm...) if they are not in the dictionary.</summary>
     public const int TechRank = 3000;
 
@@ -47,6 +50,7 @@ public sealed class LayoutDetector
             while ((line = tech.ReadLine()) != null)
             {
                 var w = line.Trim().ToLowerInvariant();
+                if (w.Length > 0) _tech.Add(w);
                 // Terms that are rare in subtitles (git is word #12811) are raised to TechRank
                 if (w.Length > 0 && (!_rank[(int)Lang.En].TryGetValue(w, out int r) || r > TechRank)) _rank[(int)Lang.En][w] = TechRank;
             }
@@ -214,6 +218,20 @@ public sealed class LayoutDetector
         converted = alt;
         if (alt == typed) { reason = "same"; return false; }   // Russian and Ukrainian often give the same result
 
+        // Words with digits or symbols ("esp32", "k8s", "c#", "c++", ".net", "node.js"): dictionaries and letter
+        // statistics don't help, so only the known technical terms are switched; anything else with digits ("5ка", "2й")
+        // is left alone
+        bool techWord = _tech.Contains(alt.ToLowerInvariant()) && !_tech.Contains(typed.ToLowerInvariant())
+                        && !_never.Contains(typed) && !_never.Contains(alt);
+        // (= is the Hindi letter ृ, so with Hindi it is a normal letter key)
+        bool hindiPair = current == Lang.Hi || other == Lang.Hi;
+        if (keys.Any(k => Layouts.IsDigitKey(k.Vk) || (!hindiPair && Layouts.IsSymbolKey(k.Vk))) || (techWord && alt.Any(c => c == '.')))
+        {
+            strength = techWord ? 900 : 0;
+            reason = techWord ? "tech-symbols" : "symbols";
+            return techWord;
+        }
+
         string coreTyped = Core(typed, current);
         string coreAlt = Core(alt, other);
         if (coreAlt.Length < 2) { reason = "alt-short"; return false; }
@@ -239,7 +257,14 @@ public sealed class LayoutDetector
 
         // Short words in CAPITALS are more likely abbreviations (API, VS, ОК)
         bool allCaps = coreTyped.Length > 0 && coreTyped.All(c => !char.IsLetter(c) || char.IsUpper(c));
-        if (allCaps && coreAlt.Length <= 3) { reason = "acronym"; return false; }
+        if (allCaps && coreAlt.Length <= 3)
+        {
+            // ...unless it is a known technical abbreviation and the typed one means nothing: "ФШ" -> "AI", "ФЗШ" -> "API"
+            if (techWord && coreAlt.Length == alt.Length && Rank(coreTyped, current) == 0)
+            { strength = 800; reason = "tech-acronym"; return true; }
+            reason = "acronym";
+            return false;
+        }
 
         // In Hindi Shift gives different letters: a capital in the middle of a word ("kaR", "meL") means it was typed in another layout
         if (other == Lang.Hi && !allCaps && coreTyped.Skip(1).Any(char.IsUpper)) punctInside = true;
