@@ -663,3 +663,4 @@ d3.js
 chart.js
 express.js
 socket.io
+mcp
