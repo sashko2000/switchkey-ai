@@ -37,6 +37,18 @@ internal sealed class CodeEditorProbe : IDisposable
     private string _lastLogged = "";
     private uint _cachedPid;
     private string _cachedExe = "";
+    private DateTime _cachedStart;                                  // when the program was started
+    private readonly Dictionary<uint, DateTime> _pause = new();     // process -> don't ask UI Automation until
+
+    /// <summary>
+    /// Visual Studio is not asked during its first minute and a half: while it starts, a UI Automation client makes WPF
+    /// build automation objects for the whole window, and Visual Studio hung (24.11.2026). Meanwhile its WPF windows
+    /// count as the code editor (no auto-correction - better than changing code).
+    /// </summary>
+    internal static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(90);
+
+    /// <summary>After the focus was in a web view inside a WPF window (WebView2 chat) or a slow answer - pause.</summary>
+    internal static readonly TimeSpan PauseAfterWebView = TimeSpan.FromMinutes(2);
 
     public volatile bool Enabled = true;
 
@@ -71,7 +83,13 @@ internal sealed class CodeEditorProbe : IDisposable
             try
             {
                 Native.GetWindowThreadProcessId(hwnd, out uint pid);
-                if (pid != _cachedPid) { _cachedPid = pid; _cachedExe = Native.ProcessFileName(pid); }
+                if (pid != _cachedPid)
+                {
+                    _cachedPid = pid;
+                    _cachedExe = Native.ProcessFileName(pid);
+                    try { using var proc = System.Diagnostics.Process.GetProcessById((int)pid); _cachedStart = proc.StartTime; }
+                    catch { _cachedStart = DateTime.MinValue; }
+                }
                 if (broken || !IsCodeEditorProgram(_cachedExe)) { _inEditor = false; continue; }
 
                 // The window with the keyboard focus: only WPF windows are asked (see the class comment)
@@ -86,17 +104,41 @@ internal sealed class CodeEditorProbe : IDisposable
                     continue;
                 }
 
+                // Starting up, busy, or recently answered from a web view: don't ask now
+                var why = Hold(hwnd, pid);
+                if (why != null)
+                {
+                    // Starting up: count as the editor; busy: keep the last answer; paused: auto-correct (the pause
+                    // comes from a chat window, where the auto-correction is wanted)
+                    _inEditor = why switch { "starting" => true, "busy" => _inEditor, _ => false };
+                    var held = $"{_cachedExe}: {why} -> {(_inEditor ? "no auto-correction" : "auto-correction")} (not asked)";
+                    if (held != _lastLogged) { Log.Write(held); _lastLogged = held; }
+                    continue;
+                }
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 uia ??= (IUIAutomation)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("ff48dba4-60ef-4201-aa87-54103eef594e"))!)!;
                 string? cls = null;
                 if (uia.GetFocusedElement(out var el) == 0 && el != null)
                 {
                     try
                     {
-                        // Check that the interface layout is right: the element's process must be the foreground one
-                        if (el.get_CurrentProcessId(out int elPid) != 0 || (uint)elPid != pid) cls = null;
+                        // The element must belong to the program itself (this also checks the interface layout).
+                        // Another process - a web view hosted inside the WPF window (WebView2 chat): pause, so that
+                        // its browser engine is not asked again on every word
+                        if (el.get_CurrentProcessId(out int elPid) != 0 || (uint)elPid != pid)
+                        {
+                            cls = null;
+                            _pause[pid] = DateTime.Now + PauseAfterWebView;
+                        }
                         else if (el.get_CurrentClassName(out var c) == 0) cls = c;
                     }
                     finally { Marshal.ReleaseComObject(el); }
+                }
+                if (sw.ElapsedMilliseconds > 500)
+                {
+                    _pause[pid] = DateTime.Now + PauseAfterWebView;
+                    Log.Write($"{_cachedExe}: UI Automation answered in {sw.ElapsedMilliseconds} ms - pausing");
                 }
                 _inEditor = IsCodeEditor(_cachedExe, cls);
                 var line = $"{_cachedExe}: focus {cls ?? "?"} -> {(_inEditor ? "code editor, no auto-correction" : "auto-correction")}";
@@ -111,6 +153,17 @@ internal sealed class CodeEditorProbe : IDisposable
             }
         }
         if (uia != null) Marshal.ReleaseComObject(uia);
+    }
+
+    /// <summary>Why the program must not be asked now (null - it may be asked).</summary>
+    private string? Hold(IntPtr hwnd, uint pid)
+    {
+        if (_cachedStart != DateTime.MinValue && DateTime.Now - _cachedStart < StartupGrace) return "starting";
+        if (_pause.TryGetValue(pid, out var until) && DateTime.Now < until) return "paused";
+        // The window must answer a plain message quickly; a busy program is not loaded with UI Automation requests
+        if (Native.SendMessageTimeout(hwnd, 0 /* WM_NULL */, IntPtr.Zero, IntPtr.Zero, 0x0002 /* SMTO_ABORTIFHUNG */, 250, out _) == IntPtr.Zero)
+            return "busy";
+        return null;
     }
 
     public void Dispose()
